@@ -1,0 +1,76 @@
+# Schemas, volumes, the registered model and the secret scope. Table-level grants are made by `setup`.
+resources:
+  schemas:
+    raw:
+      catalog_name: ${var.catalog}
+      name: ${var.schema_prefix}raw
+      comment: "Bronze: raw API responses as received, one envelope per fetch, hash-checked."
+      properties: {medallion_tier: bronze}
+      grants:
+        - principal: ${var.runner}
+          privileges: [USE_SCHEMA, CREATE_TABLE, CREATE_MATERIALIZED_VIEW]
+    daily:
+      catalog_name: ${var.catalog}
+      name: ${var.schema_prefix}daily
+      comment: "Silver: validated daily weather, forecasts, prices and the session calendar, each row with its known_at."
+      properties: {medallion_tier: silver}
+      grants:
+        - principal: ${var.runner}
+          privileges: [USE_SCHEMA, CREATE_TABLE, CREATE_MATERIALIZED_VIEW, SELECT]
+    signals:
+      catalog_name: ${var.catalog}
+      name: ${var.schema_prefix}signals
+      comment: "Gold: the temperature index, normals, the signal and its registered model, and the agent's recommendations."
+      properties: {medallion_tier: gold}
+      grants: ${var.signals_grants}  # the runner's, plus the App's on a target that has one
+    app:
+      catalog_name: ${var.catalog}
+      name: ${var.schema_prefix}app
+      comment: "Gold: the v_ui_* views and fn_ui_* functions the App, the dashboard and Genie read."
+      properties: {medallion_tier: gold}
+      grants: ${var.app_grants}  # like signals
+    ops:
+      catalog_name: ${var.catalog}
+      name: ${var.schema_prefix}ops
+      comment: "Operations: the pipeline event log, the table guard's state and incidents, and fill alerts; no tier."
+      grants:
+        - principal: ${var.runner}
+          privileges: [USE_SCHEMA, CREATE_TABLE, SELECT, MODIFY]
+
+  volumes:
+    # Keyed raw_files: a bundle key is unique across resource types and the schema is `raw`.
+    raw_files:
+      catalog_name: ${var.catalog}
+      schema_name: ${resources.schemas.raw.name}
+      name: raw
+      grants:
+        - principal: ${var.runner}
+          privileges: [READ_VOLUME, WRITE_VOLUME]
+    ledger:
+      catalog_name: ${var.catalog}
+      schema_name: ${resources.schemas.raw.name}
+      name: ledger
+      grants:
+        - principal: ${var.runner}
+          privileges: [READ_VOLUME, WRITE_VOLUME]
+    ui:
+      catalog_name: ${var.catalog}
+      schema_name: ${resources.schemas.signals.name}
+      name: ui
+      comment: snapshot.json, written hourly by the ui_snapshot job and read by the App.
+      grants: ${var.ui_volume_grants}
+
+  registered_models:
+    stock_signal:
+      catalog_name: ${var.catalog}
+      schema_name: ${resources.schemas.signals.name}
+      name: stock_signal
+      comment: Deterministic signal model for the traded stock (WMT); alias `champion` is what `score` loads.
+      grants:
+        - principal: ${var.runner}
+          privileges: [EXECUTE]
+
+  secret_scopes:
+    alphavantage:
+      # The runner's READ comes from the target's CAN_VIEW, which the CLI maps onto the scope.
+      name: ${var.secret_scope}

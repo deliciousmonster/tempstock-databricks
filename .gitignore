@@ -1,0 +1,20 @@
+.venv/
+dist/
+__pycache__/
+*.pyc
+.databricks/
+.ruff_cache/
+.mypy_cache/
+spark-warehouse/
+metastore_db/
+derby.log
+*.egg-info/
+coverage.xml
+.coverage
+.venv-connect/
+
+/.worktrees/
+# Agent lanes.
+/.claude/worktrees/
+/retired/
+build/

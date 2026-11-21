@@ -1,0 +1,36 @@
+# The walk's latest refit, registered with its gate; @champion only if the gate passed. Bootstrap runs
+# it, and its schedule runs it each January.
+
+resources:
+  jobs:
+    train:
+      name: ${var.schema_prefix}weather-signal-train
+      max_concurrent_runs: 1
+      queue: {enabled: false}
+      performance_target: STANDARD
+      # The champion ends 31 Dec; nightly through 9 Jan catches the year's first session's refit.
+      schedule:
+        quartz_cron_expression: "0 45 23 2-9 1 ?"
+        timezone_id: UTC
+        pause_status: ${var.schedule_pause}
+      email_notifications:
+        on_failure: ["${var.owner}"]
+      health:
+        rules:
+          - metric: RUN_DURATION_SECONDS
+            op: GREATER_THAN
+            value: 1200
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"
+            dependencies:
+              - ../dist/*.whl
+      tasks:
+        - task_key: train
+          environment_key: default
+          timeout_seconds: 1800
+          python_wheel_task:
+            package_name: weather_signal
+            entry_point: weather-signal-train
+            parameters: [--catalog, "${var.catalog}", --schema-prefix, "${var.schema_prefix}"]

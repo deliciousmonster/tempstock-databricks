@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>weather-signal</title>
+<link rel="stylesheet" href="static/vendor/uPlot.min.css">
+<link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+<header>
+  <h1>weather-signal <span class="sub">WMT calls from US temperature</span></h1>
+  <nav><a href="#/outlook">Outlook</a> <a href="#/history">History</a> <a href="#/intraday">Intraday</a> <a href="#/runs">Agent runs</a></nav>
+  <p id="mode" class="mode"></p>
+</header>
+<main id="main"><p>Loading.</p></main>
+<footer><p id="notice">Personal demo. Not investment advice. Weather data by Open-Meteo.com (CC BY 4.0).</p></footer>
+<script src="static/vendor/uPlot.iife.min.js"></script>
+<script src="static/integrity.js"></script>
+<script src="snapshot.js" onerror="void 0"></script>
+<script src="static/app.js"></script>
+</body>
+</html>

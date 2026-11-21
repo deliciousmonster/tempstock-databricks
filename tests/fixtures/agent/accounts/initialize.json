@@ -1,0 +1,30 @@
+{
+  "claude_code_version": "2.1.326",
+  "hook_on_failure_supported": true,
+  "keys": [
+    "account",
+    "agents",
+    "analytics_disabled",
+    "available_output_styles",
+    "capabilities",
+    "claude_code_version",
+    "commands",
+    "current_permission_mode",
+    "fast_mode_disabled_reason",
+    "fast_mode_state",
+    "feedback_mode",
+    "hook_on_failure_supported",
+    "hooks_when_unanswered_kept",
+    "ide_rc_auto_enable_gate",
+    "models",
+    "other_hook_ask_outranks_host",
+    "output_style",
+    "pid",
+    "remote_control_auto_connect_default",
+    "remote_control_auto_enable",
+    "remote_control_auto_on_by_default",
+    "remote_control_available",
+    "session_state",
+    "user_output_styles_dir"
+  ]
+}

@@ -1,0 +1,35 @@
+# Hourly at :15 UTC: write snapshot.json to the ui volume for the App.
+
+resources:
+  jobs:
+    ui_snapshot:
+      name: ${var.schema_prefix}weather-signal-ui-snapshot
+      max_concurrent_runs: 1
+      queue: {enabled: false}
+      performance_target: STANDARD
+      schedule:
+        quartz_cron_expression: "0 15 * * * ?"
+        timezone_id: UTC
+        pause_status: ${var.schedule_pause}
+      email_notifications:
+        on_failure: ["${var.owner}"]
+      health:
+        rules:
+          - metric: RUN_DURATION_SECONDS
+            op: GREATER_THAN
+            value: 600
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"
+            dependencies:
+              - ../dist/*.whl
+      tasks:
+        - task_key: snapshot
+          environment_key: default
+          timeout_seconds: 900
+          python_wheel_task:
+            package_name: weather_signal
+            entry_point: weather-signal-ui-snapshot
+            parameters: [--catalog, "${var.catalog}", --schema-prefix, "${var.schema_prefix}"]
+

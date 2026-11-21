@@ -1,0 +1,1876 @@
+{
+ "datasets": [
+  {
+   "name": "status",
+   "displayName": "status",
+   "queryLines": [
+    "SELECT latest_signal_as_of, latest_agent_as_of, open_incident, post_verified_as_of, guarded_tables, ",
+    "audit_problems, last_run_outcome, last_run_route, read_at FROM v_ui_status"
+   ]
+  },
+  {
+   "name": "sources",
+   "displayName": "sources",
+   "queryLines": [
+    "SELECT kind, layer, name, at, n, n_bad, state, ",
+    "CASE WHEN kind = 'fresh' AND name = 'temp_index_daily' THEN 'latest data day' ",
+    "WHEN kind = 'fresh' THEN 'latest known_at' WHEN kind = 'source' THEN 'last landed' ",
+    "WHEN state = 'COMPLETED' THEN 'checked' ELSE concat('pipeline update ', coalesce(state, 'unknown')) END AS label ",
+    "FROM v_ui_sources WHERE kind <> 'fill_shape' ORDER BY kind, layer, name"
+   ]
+  },
+  {
+   "name": "outlook",
+   "displayName": "outlook",
+   "queryLines": [
+    "SELECT target_date, horizon_days, coalesce(shown_action, 'no agent call') AS call, ",
+    "signal_action AS model_signal, signal_confidence, forecast_anomaly_c, ",
+    "CASE WHEN forecast_anomaly_c IS NOT NULL THEN 'normal' WHEN array_contains(reasons, 'no_normal') ",
+    "THEN 'no normal' ELSE 'anomaly not recorded' END AS anomaly_basis, ",
+    "downgrade_reason, coalesce(run_outcome, 'no run recorded') AS run_outcome, ",
+    "coalesce(audit_problem, 'none') AS audit, written_at FROM v_ui_outlook ORDER BY horizon_days"
+   ]
+  },
+  {
+   "name": "close",
+   "displayName": "close",
+   "queryLines": [
+    "SELECT date, close FROM v_ui_index WHERE close IS NOT NULL ORDER BY date"
+   ]
+  },
+  {
+   "name": "anomaly_monthly",
+   "displayName": "anomaly_monthly",
+   "queryLines": [
+    "WITH m AS (SELECT explode(sequence(date_trunc('MONTH', min(date)), date_trunc('MONTH', max(date)), ",
+    "INTERVAL 1 MONTH)) AS month FROM v_ui_index WHERE index_c IS NOT NULL), ",
+    "a AS (SELECT date_trunc('MONTH', date) AS month, avg(anomaly_c) AS anomaly_c FROM v_ui_index GROUP BY 1) ",
+    "SELECT m.month, a.anomaly_c FROM m LEFT JOIN a ON a.month = m.month ORDER BY m.month"
+   ]
+  },
+  {
+   "name": "history_calls",
+   "displayName": "history_calls",
+   "queryLines": [
+    "SELECT target_date, coalesce(shown_action, 'no agent call') AS call, signal_action AS model_signal, ",
+    "source, coalesce(audit_problem, 'none') AS audit, last_close FROM v_ui_calls WHERE horizon_days = 0 ",
+    "QUALIFY row_number() OVER (PARTITION BY target_date ORDER BY as_of DESC) = 1 ORDER BY target_date DESC"
+   ]
+  },
+  {
+   "name": "firmed",
+   "displayName": "firmed",
+   "queryLines": [
+    "SELECT target_date, horizon_days, coalesce(max_by(shown_action, as_of), 'no agent call') AS call, ",
+    "max_by(signal_action, as_of) AS model_signal FROM v_ui_calls ",
+    "WHERE target_date >= current_date() - 30 GROUP BY ALL ORDER BY target_date DESC, horizon_days DESC"
+   ]
+  },
+  {
+   "name": "firmed_changed",
+   "displayName": "firmed_changed",
+   "queryLines": [
+    "SELECT count_if(a6 <> a0) AS changed, count(*) AS dates FROM (SELECT target_date, ",
+    "max_by(shown_action, as_of) FILTER (WHERE horizon_days = 6) AS a6, ",
+    "max_by(shown_action, as_of) FILTER (WHERE horizon_days = 0) AS a0 FROM v_ui_calls GROUP BY target_date) ",
+    "WHERE a6 IS NOT NULL AND a0 IS NOT NULL"
+   ]
+  },
+  {
+   "name": "runs_daily",
+   "displayName": "runs_daily",
+   "queryLines": [
+    "SELECT date(started_at) AS day, coalesce(outcome, 'unknown') AS outcome, count(*) AS runs ",
+    "FROM v_ui_agent_runs GROUP BY ALL ORDER BY day"
+   ]
+  },
+  {
+   "name": "routes",
+   "displayName": "routes",
+   "queryLines": [
+    "SELECT coalesce(route, 'unknown') AS route, count(*) AS runs FROM v_ui_agent_runs GROUP BY 1"
+   ]
+  },
+  {
+   "name": "durations",
+   "displayName": "durations",
+   "queryLines": [
+    "SELECT percentile(duration_s, 0.5) AS p50_s, max(duration_s) AS max_s, count(*) AS runs FROM v_ui_agent_runs"
+   ]
+  },
+  {
+   "name": "audit",
+   "displayName": "audit",
+   "queryLines": [
+    "SELECT as_of, target_date, signal_action AS model_signal, agent_action, audit_problem FROM v_ui_calls ",
+    "WHERE audit_problem IS NOT NULL ORDER BY as_of DESC"
+   ]
+  },
+  {
+   "name": "intraday_chart",
+   "displayName": "intraday_chart",
+   "queryLines": [
+    "WITH bars AS (SELECT bar_start, close FROM v_ui_intraday), ",
+    "sess AS (SELECT to_date(bar_start) AS d, min(bar_start) AS opened, max(session_close) AS closed FROM v_ui_intraday GROUP BY 1), ",
+    "calls AS (SELECT c.* FROM v_ui_calls c JOIN sess s ON to_date(c.as_of) = s.d ",
+    "AND c.as_of BETWEEN s.opened AND s.closed + INTERVAL 1 HOUR WHERE c.horizon_days = 0) ",
+    "SELECT bar_start AS at, close AS price, 'hourly close' AS series FROM bars ",
+    "UNION ALL SELECT c.as_of, max_by(b.close, b.bar_start), ",
+    "concat(coalesce(c.shown_action, c.signal_action), ' call') ",
+    "FROM calls c JOIN bars b ON b.bar_start < c.as_of GROUP BY c.as_of, c.shown_action, c.signal_action ",
+    "UNION ALL SELECT as_of, est_price, 'est_price' FROM calls WHERE est_price IS NOT NULL ",
+    "ORDER BY at"
+   ]
+  },
+  {
+   "name": "intraday_calls",
+   "displayName": "intraday_calls",
+   "queryLines": [
+    "WITH bars AS (SELECT bar_start, close FROM v_ui_intraday), ",
+    "sess AS (SELECT to_date(bar_start) AS d, min(bar_start) AS opened, max(session_close) AS closed FROM v_ui_intraday GROUP BY 1), ",
+    "calls AS (SELECT c.* FROM v_ui_calls c JOIN sess s ON to_date(c.as_of) = s.d ",
+    "AND c.as_of BETWEEN s.opened AND s.closed + INTERVAL 1 HOUR WHERE c.horizon_days = 0) ",
+    "SELECT as_of, target_date, coalesce(shown_action, 'no agent call') AS call, ",
+    "signal_action AS model_signal, last_close, ",
+    "CASE WHEN est_price IS NOT NULL THEN format_number(est_price, 2) ",
+    "ELSE concat_ws(' ', '-', est_reason) END AS est_price ",
+    "FROM calls ORDER BY as_of DESC"
+   ]
+  }
+ ],
+ "pages": [
+  {
+   "name": "sources",
+   "displayName": "Sources",
+   "pageType": "PAGE_TYPE_CANVAS",
+   "layout": [
+    {
+     "widget": {
+      "name": "sources-title",
+      "multilineTextboxSpec": {
+       "lines": [
+        "## Sources\n",
+        "What landed, how fresh each layer is, and the last pipeline update with its expectations. Signals is shown by freshness only.\n",
+        "\n_Personal demo. Not investment advice. Weather data by Open-Meteo.com (CC BY 4.0)._"
+       ]
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 0,
+      "width": 6,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "sources-guard",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "status",
+         "fields": [
+          {
+           "name": "open_incident",
+           "expression": "`open_incident`"
+          },
+          {
+           "name": "post_verified_as_of",
+           "expression": "`post_verified_as_of`"
+          },
+          {
+           "name": "guarded_tables",
+           "expression": "`guarded_tables`"
+          },
+          {
+           "name": "audit_problems",
+           "expression": "`audit_problems`"
+          },
+          {
+           "name": "read_at",
+           "expression": "`read_at`"
+          }
+         ],
+         "disaggregated": true
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "table",
+       "encodings": {
+        "columns": [
+         {
+          "fieldName": "open_incident",
+          "displayName": "open_incident"
+         },
+         {
+          "fieldName": "post_verified_as_of",
+          "displayName": "post_verified_as_of"
+         },
+         {
+          "fieldName": "guarded_tables",
+          "displayName": "guarded_tables"
+         },
+         {
+          "fieldName": "audit_problems",
+          "displayName": "audit_problems"
+         },
+         {
+          "fieldName": "read_at",
+          "displayName": "read_at"
+         }
+        ]
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Guard inputs as read (no verified claim: the dashboard cannot see when it is viewed)"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 2,
+      "width": 6,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "sources-table",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "sources",
+         "fields": [
+          {
+           "name": "kind",
+           "expression": "`kind`"
+          },
+          {
+           "name": "layer",
+           "expression": "`layer`"
+          },
+          {
+           "name": "name",
+           "expression": "`name`"
+          },
+          {
+           "name": "label",
+           "expression": "`label`"
+          },
+          {
+           "name": "at",
+           "expression": "`at`"
+          },
+          {
+           "name": "n",
+           "expression": "`n`"
+          },
+          {
+           "name": "n_bad",
+           "expression": "`n_bad`"
+          },
+          {
+           "name": "state",
+           "expression": "`state`"
+          }
+         ],
+         "disaggregated": true
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "table",
+       "encodings": {
+        "columns": [
+         {
+          "fieldName": "kind",
+          "displayName": "kind"
+         },
+         {
+          "fieldName": "layer",
+          "displayName": "layer"
+         },
+         {
+          "fieldName": "name",
+          "displayName": "name"
+         },
+         {
+          "fieldName": "label",
+          "displayName": "label"
+         },
+         {
+          "fieldName": "at",
+          "displayName": "at"
+         },
+         {
+          "fieldName": "n",
+          "displayName": "n"
+         },
+         {
+          "fieldName": "n_bad",
+          "displayName": "n_bad"
+         },
+         {
+          "fieldName": "state",
+          "displayName": "state"
+         }
+        ]
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Sources, freshness and expectations"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 4,
+      "width": 6,
+      "height": 7
+     }
+    }
+   ]
+  },
+  {
+   "name": "outlook",
+   "displayName": "Outlook",
+   "pageType": "PAGE_TYPE_CANVAS",
+   "layout": [
+    {
+     "widget": {
+      "name": "outlook-title",
+      "multilineTextboxSpec": {
+       "lines": [
+        "## Outlook\n",
+        "Calls are the agent's actions; 'no agent call' rows show the model signal beside them, which is not a call.\n",
+        "\n_Personal demo. Not investment advice. Weather data by Open-Meteo.com (CC BY 4.0)._"
+       ]
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 0,
+      "width": 6,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "outlook-guard",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "status",
+         "fields": [
+          {
+           "name": "open_incident",
+           "expression": "`open_incident`"
+          },
+          {
+           "name": "post_verified_as_of",
+           "expression": "`post_verified_as_of`"
+          },
+          {
+           "name": "guarded_tables",
+           "expression": "`guarded_tables`"
+          },
+          {
+           "name": "audit_problems",
+           "expression": "`audit_problems`"
+          },
+          {
+           "name": "read_at",
+           "expression": "`read_at`"
+          }
+         ],
+         "disaggregated": true
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "table",
+       "encodings": {
+        "columns": [
+         {
+          "fieldName": "open_incident",
+          "displayName": "open_incident"
+         },
+         {
+          "fieldName": "post_verified_as_of",
+          "displayName": "post_verified_as_of"
+         },
+         {
+          "fieldName": "guarded_tables",
+          "displayName": "guarded_tables"
+         },
+         {
+          "fieldName": "audit_problems",
+          "displayName": "audit_problems"
+         },
+         {
+          "fieldName": "read_at",
+          "displayName": "read_at"
+         }
+        ]
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Guard inputs as read (no verified claim: the dashboard cannot see when it is viewed)"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 2,
+      "width": 6,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "outlook-status",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "status",
+         "fields": [
+          {
+           "name": "latest_signal_as_of",
+           "expression": "`latest_signal_as_of`"
+          },
+          {
+           "name": "latest_agent_as_of",
+           "expression": "`latest_agent_as_of`"
+          },
+          {
+           "name": "last_run_outcome",
+           "expression": "`last_run_outcome`"
+          },
+          {
+           "name": "last_run_route",
+           "expression": "`last_run_route`"
+          }
+         ],
+         "disaggregated": true
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "table",
+       "encodings": {
+        "columns": [
+         {
+          "fieldName": "latest_signal_as_of",
+          "displayName": "latest_signal_as_of"
+         },
+         {
+          "fieldName": "latest_agent_as_of",
+          "displayName": "latest_agent_as_of"
+         },
+         {
+          "fieldName": "last_run_outcome",
+          "displayName": "last_run_outcome"
+         },
+         {
+          "fieldName": "last_run_route",
+          "displayName": "last_run_route"
+         }
+        ]
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Latest"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 4,
+      "width": 6,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "outlook-calls",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "outlook",
+         "fields": [
+          {
+           "name": "target_date",
+           "expression": "`target_date`"
+          },
+          {
+           "name": "horizon_days",
+           "expression": "`horizon_days`"
+          },
+          {
+           "name": "call",
+           "expression": "`call`"
+          },
+          {
+           "name": "model_signal",
+           "expression": "`model_signal`"
+          },
+          {
+           "name": "signal_confidence",
+           "expression": "`signal_confidence`"
+          },
+          {
+           "name": "forecast_anomaly_c",
+           "expression": "`forecast_anomaly_c`"
+          },
+          {
+           "name": "anomaly_basis",
+           "expression": "`anomaly_basis`"
+          },
+          {
+           "name": "downgrade_reason",
+           "expression": "`downgrade_reason`"
+          },
+          {
+           "name": "run_outcome",
+           "expression": "`run_outcome`"
+          },
+          {
+           "name": "audit",
+           "expression": "`audit`"
+          }
+         ],
+         "disaggregated": true
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "table",
+       "encodings": {
+        "columns": [
+         {
+          "fieldName": "target_date",
+          "displayName": "target_date"
+         },
+         {
+          "fieldName": "horizon_days",
+          "displayName": "horizon_days"
+         },
+         {
+          "fieldName": "call",
+          "displayName": "call"
+         },
+         {
+          "fieldName": "model_signal",
+          "displayName": "model_signal"
+         },
+         {
+          "fieldName": "signal_confidence",
+          "displayName": "signal_confidence"
+         },
+         {
+          "fieldName": "forecast_anomaly_c",
+          "displayName": "forecast_anomaly_c"
+         },
+         {
+          "fieldName": "anomaly_basis",
+          "displayName": "anomaly_basis"
+         },
+         {
+          "fieldName": "downgrade_reason",
+          "displayName": "downgrade_reason"
+         },
+         {
+          "fieldName": "run_outcome",
+          "displayName": "run_outcome"
+         },
+         {
+          "fieldName": "audit",
+          "displayName": "audit"
+         }
+        ]
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "The seven calls of the latest outlook"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 6,
+      "width": 6,
+      "height": 5
+     }
+    },
+    {
+     "widget": {
+      "name": "outlook-anomaly",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "outlook",
+         "fields": [
+          {
+           "name": "target_date",
+           "expression": "`target_date`"
+          },
+          {
+           "name": "forecast_anomaly_c",
+           "expression": "`forecast_anomaly_c`"
+          },
+          {
+           "name": "call",
+           "expression": "`call`"
+          }
+         ],
+         "disaggregated": true
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "bar",
+       "encodings": {
+        "x": {
+         "fieldName": "target_date",
+         "scale": {
+          "type": "temporal"
+         },
+         "displayName": "Target date"
+        },
+        "y": {
+         "fieldName": "forecast_anomaly_c",
+         "scale": {
+          "type": "quantitative"
+         },
+         "displayName": "Forecast anomaly (°C)"
+        },
+        "color": {
+         "fieldName": "call",
+         "scale": {
+          "type": "categorical"
+         },
+         "displayName": "Call"
+        }
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Forecast anomaly by date, coloured by call (no bar: no anomaly recorded)"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 11,
+      "width": 6,
+      "height": 5
+     }
+    }
+   ]
+  },
+  {
+   "name": "history",
+   "displayName": "History",
+   "pageType": "PAGE_TYPE_CANVAS",
+   "layout": [
+    {
+     "widget": {
+      "name": "history-title",
+      "multilineTextboxSpec": {
+       "lines": [
+        "## History\n",
+        "WMT close over the price history, and the US temperature index against its normal by month. Months without index data are blank, not joined.\n",
+        "\n_Personal demo. Not investment advice. Weather data by Open-Meteo.com (CC BY 4.0)._"
+       ]
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 0,
+      "width": 6,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "history-guard",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "status",
+         "fields": [
+          {
+           "name": "open_incident",
+           "expression": "`open_incident`"
+          },
+          {
+           "name": "post_verified_as_of",
+           "expression": "`post_verified_as_of`"
+          },
+          {
+           "name": "guarded_tables",
+           "expression": "`guarded_tables`"
+          },
+          {
+           "name": "audit_problems",
+           "expression": "`audit_problems`"
+          },
+          {
+           "name": "read_at",
+           "expression": "`read_at`"
+          }
+         ],
+         "disaggregated": true
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "table",
+       "encodings": {
+        "columns": [
+         {
+          "fieldName": "open_incident",
+          "displayName": "open_incident"
+         },
+         {
+          "fieldName": "post_verified_as_of",
+          "displayName": "post_verified_as_of"
+         },
+         {
+          "fieldName": "guarded_tables",
+          "displayName": "guarded_tables"
+         },
+         {
+          "fieldName": "audit_problems",
+          "displayName": "audit_problems"
+         },
+         {
+          "fieldName": "read_at",
+          "displayName": "read_at"
+         }
+        ]
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Guard inputs as read (no verified claim: the dashboard cannot see when it is viewed)"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 2,
+      "width": 6,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "history-close",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "close",
+         "fields": [
+          {
+           "name": "date",
+           "expression": "`date`"
+          },
+          {
+           "name": "close",
+           "expression": "`close`"
+          }
+         ],
+         "disaggregated": true
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "line",
+       "encodings": {
+        "x": {
+         "fieldName": "date",
+         "scale": {
+          "type": "temporal"
+         },
+         "displayName": "Date"
+        },
+        "y": {
+         "fieldName": "close",
+         "scale": {
+          "type": "quantitative"
+         },
+         "displayName": "WMT close (USD)"
+        }
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "WMT close"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 4,
+      "width": 6,
+      "height": 5
+     }
+    },
+    {
+     "widget": {
+      "name": "history-anomaly",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "anomaly_monthly",
+         "fields": [
+          {
+           "name": "month",
+           "expression": "`month`"
+          },
+          {
+           "name": "anomaly_c",
+           "expression": "`anomaly_c`"
+          }
+         ],
+         "disaggregated": true
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "line",
+       "encodings": {
+        "x": {
+         "fieldName": "month",
+         "scale": {
+          "type": "temporal"
+         },
+         "displayName": "Month"
+        },
+        "y": {
+         "fieldName": "anomaly_c",
+         "scale": {
+          "type": "quantitative"
+         },
+         "displayName": "Temperature anomaly, monthly mean (°C)"
+        }
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Temperature index anomaly, monthly mean (C)"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 9,
+      "width": 6,
+      "height": 5
+     }
+    },
+    {
+     "widget": {
+      "name": "history-calls",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "history_calls",
+         "fields": [
+          {
+           "name": "target_date",
+           "expression": "`target_date`"
+          },
+          {
+           "name": "call",
+           "expression": "`call`"
+          },
+          {
+           "name": "model_signal",
+           "expression": "`model_signal`"
+          },
+          {
+           "name": "source",
+           "expression": "`source`"
+          },
+          {
+           "name": "audit",
+           "expression": "`audit`"
+          },
+          {
+           "name": "last_close",
+           "expression": "`last_close`"
+          }
+         ],
+         "disaggregated": true
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "table",
+       "encodings": {
+        "columns": [
+         {
+          "fieldName": "target_date",
+          "displayName": "target_date"
+         },
+         {
+          "fieldName": "call",
+          "displayName": "call"
+         },
+         {
+          "fieldName": "model_signal",
+          "displayName": "model_signal"
+         },
+         {
+          "fieldName": "source",
+          "displayName": "source"
+         },
+         {
+          "fieldName": "audit",
+          "displayName": "audit"
+         },
+         {
+          "fieldName": "last_close",
+          "displayName": "last_close"
+         }
+        ]
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Each day's horizon-0 call"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 14,
+      "width": 6,
+      "height": 6
+     }
+    }
+   ]
+  },
+  {
+   "name": "intraday",
+   "displayName": "Intraday",
+   "pageType": "PAGE_TYPE_CANVAS",
+   "layout": [
+    {
+     "widget": {
+      "name": "intraday-title",
+      "multilineTextboxSpec": {
+       "lines": [
+        "## Intraday\n",
+        "Hourly WMT closes for the last five sessions, from Yahoo's 60-minute chart, for display only: every call is made from daily closes and no model input reads these bars. Call points are the horizon-0 calls made in each session (the agent's call, else the model signal) at the last close before the call; est_price points are each call's estimated price.\n",
+        "\n_Personal demo. Not investment advice. Weather data by Open-Meteo.com (CC BY 4.0)._"
+       ]
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 0,
+      "width": 6,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "intraday-guard",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "status",
+         "fields": [
+          {
+           "name": "open_incident",
+           "expression": "`open_incident`"
+          },
+          {
+           "name": "post_verified_as_of",
+           "expression": "`post_verified_as_of`"
+          },
+          {
+           "name": "guarded_tables",
+           "expression": "`guarded_tables`"
+          },
+          {
+           "name": "audit_problems",
+           "expression": "`audit_problems`"
+          },
+          {
+           "name": "read_at",
+           "expression": "`read_at`"
+          }
+         ],
+         "disaggregated": true
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "table",
+       "encodings": {
+        "columns": [
+         {
+          "fieldName": "open_incident",
+          "displayName": "open_incident"
+         },
+         {
+          "fieldName": "post_verified_as_of",
+          "displayName": "post_verified_as_of"
+         },
+         {
+          "fieldName": "guarded_tables",
+          "displayName": "guarded_tables"
+         },
+         {
+          "fieldName": "audit_problems",
+          "displayName": "audit_problems"
+         },
+         {
+          "fieldName": "read_at",
+          "displayName": "read_at"
+         }
+        ]
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Guard inputs as read (no verified claim: the dashboard cannot see when it is viewed)"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 2,
+      "width": 6,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "intraday-chart",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "intraday_chart",
+         "fields": [
+          {
+           "name": "at",
+           "expression": "`at`"
+          },
+          {
+           "name": "price",
+           "expression": "`price`"
+          },
+          {
+           "name": "series",
+           "expression": "`series`"
+          }
+         ],
+         "disaggregated": true
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "scatter",
+       "encodings": {
+        "x": {
+         "fieldName": "at",
+         "scale": {
+          "type": "temporal"
+         },
+         "displayName": "Time (UTC)"
+        },
+        "y": {
+         "fieldName": "price",
+         "scale": {
+          "type": "quantitative"
+         },
+         "displayName": "WMT price (USD)"
+        },
+        "color": {
+         "fieldName": "series",
+         "scale": {
+          "type": "categorical"
+         },
+         "displayName": "Series"
+        }
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "WMT hourly closes with the calls and their est_price"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 4,
+      "width": 6,
+      "height": 6
+     }
+    },
+    {
+     "widget": {
+      "name": "intraday-calls",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "intraday_calls",
+         "fields": [
+          {
+           "name": "as_of",
+           "expression": "`as_of`"
+          },
+          {
+           "name": "target_date",
+           "expression": "`target_date`"
+          },
+          {
+           "name": "call",
+           "expression": "`call`"
+          },
+          {
+           "name": "model_signal",
+           "expression": "`model_signal`"
+          },
+          {
+           "name": "last_close",
+           "expression": "`last_close`"
+          },
+          {
+           "name": "est_price",
+           "expression": "`est_price`"
+          }
+         ],
+         "disaggregated": true
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "table",
+       "encodings": {
+        "columns": [
+         {
+          "fieldName": "as_of",
+          "displayName": "as_of"
+         },
+         {
+          "fieldName": "target_date",
+          "displayName": "target_date"
+         },
+         {
+          "fieldName": "call",
+          "displayName": "call"
+         },
+         {
+          "fieldName": "model_signal",
+          "displayName": "model_signal"
+         },
+         {
+          "fieldName": "last_close",
+          "displayName": "last_close"
+         },
+         {
+          "fieldName": "est_price",
+          "displayName": "est_price"
+         }
+        ]
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Recent calls (est_price: - and the reason when none)"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 10,
+      "width": 6,
+      "height": 5
+     }
+    }
+   ]
+  },
+  {
+   "name": "firmed",
+   "displayName": "How calls firmed",
+   "pageType": "PAGE_TYPE_CANVAS",
+   "layout": [
+    {
+     "widget": {
+      "name": "firmed-title",
+      "multilineTextboxSpec": {
+       "lines": [
+        "## How calls firmed\n",
+        "Each target date's latest call at each horizon, last 30 days.\n",
+        "\n_Personal demo. Not investment advice. Weather data by Open-Meteo.com (CC BY 4.0)._"
+       ]
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 0,
+      "width": 6,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "firmed-guard",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "status",
+         "fields": [
+          {
+           "name": "open_incident",
+           "expression": "`open_incident`"
+          },
+          {
+           "name": "post_verified_as_of",
+           "expression": "`post_verified_as_of`"
+          },
+          {
+           "name": "guarded_tables",
+           "expression": "`guarded_tables`"
+          },
+          {
+           "name": "audit_problems",
+           "expression": "`audit_problems`"
+          },
+          {
+           "name": "read_at",
+           "expression": "`read_at`"
+          }
+         ],
+         "disaggregated": true
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "table",
+       "encodings": {
+        "columns": [
+         {
+          "fieldName": "open_incident",
+          "displayName": "open_incident"
+         },
+         {
+          "fieldName": "post_verified_as_of",
+          "displayName": "post_verified_as_of"
+         },
+         {
+          "fieldName": "guarded_tables",
+          "displayName": "guarded_tables"
+         },
+         {
+          "fieldName": "audit_problems",
+          "displayName": "audit_problems"
+         },
+         {
+          "fieldName": "read_at",
+          "displayName": "read_at"
+         }
+        ]
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Guard inputs as read (no verified claim: the dashboard cannot see when it is viewed)"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 2,
+      "width": 6,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "firmed-changed",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "firmed_changed",
+         "fields": [
+          {
+           "name": "changed",
+           "expression": "`changed`"
+          }
+         ],
+         "disaggregated": true
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "changed",
+         "displayName": "Dates whose call changed between horizon 6 and 0"
+        }
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Dates whose call changed between horizon 6 and 0"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 4,
+      "width": 3,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "firmed-dates",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "firmed_changed",
+         "fields": [
+          {
+           "name": "dates",
+           "expression": "`dates`"
+          }
+         ],
+         "disaggregated": true
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "dates",
+         "displayName": "Dates with both horizons called"
+        }
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Dates with both horizons called"
+       }
+      }
+     },
+     "position": {
+      "x": 3,
+      "y": 4,
+      "width": 3,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "firmed-table",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "firmed",
+         "fields": [
+          {
+           "name": "target_date",
+           "expression": "`target_date`"
+          },
+          {
+           "name": "horizon_days",
+           "expression": "`horizon_days`"
+          },
+          {
+           "name": "call",
+           "expression": "`call`"
+          },
+          {
+           "name": "model_signal",
+           "expression": "`model_signal`"
+          }
+         ],
+         "disaggregated": true
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "table",
+       "encodings": {
+        "columns": [
+         {
+          "fieldName": "target_date",
+          "displayName": "target_date"
+         },
+         {
+          "fieldName": "horizon_days",
+          "displayName": "horizon_days"
+         },
+         {
+          "fieldName": "call",
+          "displayName": "call"
+         },
+         {
+          "fieldName": "model_signal",
+          "displayName": "model_signal"
+         }
+        ]
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Calls by date and horizon"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 7,
+      "width": 6,
+      "height": 7
+     }
+    }
+   ]
+  },
+  {
+   "name": "agent",
+   "displayName": "Agent and integrity",
+   "pageType": "PAGE_TYPE_CANVAS",
+   "layout": [
+    {
+     "widget": {
+      "name": "agent-title",
+      "multilineTextboxSpec": {
+       "lines": [
+        "## Agent and integrity\n",
+        "Agent runs, their routes and durations, and every audit problem.\n",
+        "\n_Personal demo. Not investment advice. Weather data by Open-Meteo.com (CC BY 4.0)._"
+       ]
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 0,
+      "width": 6,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "agent-guard",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "status",
+         "fields": [
+          {
+           "name": "open_incident",
+           "expression": "`open_incident`"
+          },
+          {
+           "name": "post_verified_as_of",
+           "expression": "`post_verified_as_of`"
+          },
+          {
+           "name": "guarded_tables",
+           "expression": "`guarded_tables`"
+          },
+          {
+           "name": "audit_problems",
+           "expression": "`audit_problems`"
+          },
+          {
+           "name": "read_at",
+           "expression": "`read_at`"
+          }
+         ],
+         "disaggregated": true
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "table",
+       "encodings": {
+        "columns": [
+         {
+          "fieldName": "open_incident",
+          "displayName": "open_incident"
+         },
+         {
+          "fieldName": "post_verified_as_of",
+          "displayName": "post_verified_as_of"
+         },
+         {
+          "fieldName": "guarded_tables",
+          "displayName": "guarded_tables"
+         },
+         {
+          "fieldName": "audit_problems",
+          "displayName": "audit_problems"
+         },
+         {
+          "fieldName": "read_at",
+          "displayName": "read_at"
+         }
+        ]
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Guard inputs as read (no verified claim: the dashboard cannot see when it is viewed)"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 2,
+      "width": 6,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "agent-runs",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "runs_daily",
+         "fields": [
+          {
+           "name": "day",
+           "expression": "`day`"
+          },
+          {
+           "name": "runs",
+           "expression": "`runs`"
+          },
+          {
+           "name": "outcome",
+           "expression": "`outcome`"
+          }
+         ],
+         "disaggregated": true
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "bar",
+       "encodings": {
+        "x": {
+         "fieldName": "day",
+         "scale": {
+          "type": "temporal"
+         },
+         "displayName": "Day"
+        },
+        "y": {
+         "fieldName": "runs",
+         "scale": {
+          "type": "quantitative"
+         },
+         "displayName": "Runs"
+        },
+        "color": {
+         "fieldName": "outcome",
+         "scale": {
+          "type": "categorical"
+         },
+         "displayName": "Run outcome"
+        }
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Runs per day by outcome"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 4,
+      "width": 4,
+      "height": 5
+     }
+    },
+    {
+     "widget": {
+      "name": "agent-routes",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "routes",
+         "fields": [
+          {
+           "name": "route",
+           "expression": "`route`"
+          },
+          {
+           "name": "runs",
+           "expression": "`runs`"
+          }
+         ],
+         "disaggregated": true
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "bar",
+       "encodings": {
+        "x": {
+         "fieldName": "route",
+         "scale": {
+          "type": "categorical"
+         },
+         "displayName": "Route"
+        },
+        "y": {
+         "fieldName": "runs",
+         "scale": {
+          "type": "quantitative"
+         },
+         "displayName": "Runs"
+        }
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Runs by route"
+       }
+      }
+     },
+     "position": {
+      "x": 4,
+      "y": 4,
+      "width": 2,
+      "height": 5
+     }
+    },
+    {
+     "widget": {
+      "name": "agent-p50",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "durations",
+         "fields": [
+          {
+           "name": "p50_s",
+           "expression": "`p50_s`"
+          }
+         ],
+         "disaggregated": true
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "p50_s",
+         "displayName": "Run duration p50 (s)"
+        }
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Run duration p50 (s)"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 9,
+      "width": 2,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "agent-max",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "durations",
+         "fields": [
+          {
+           "name": "max_s",
+           "expression": "`max_s`"
+          }
+         ],
+         "disaggregated": true
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "max_s",
+         "displayName": "Run duration max (s)"
+        }
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Run duration max (s)"
+       }
+      }
+     },
+     "position": {
+      "x": 2,
+      "y": 9,
+      "width": 2,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "agent-n",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "durations",
+         "fields": [
+          {
+           "name": "runs",
+           "expression": "`runs`"
+          }
+         ],
+         "disaggregated": true
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "runs",
+         "displayName": "Runs recorded"
+        }
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Runs recorded"
+       }
+      }
+     },
+     "position": {
+      "x": 4,
+      "y": 9,
+      "width": 2,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "agent-audit",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "audit",
+         "fields": [
+          {
+           "name": "as_of",
+           "expression": "`as_of`"
+          },
+          {
+           "name": "target_date",
+           "expression": "`target_date`"
+          },
+          {
+           "name": "model_signal",
+           "expression": "`model_signal`"
+          },
+          {
+           "name": "agent_action",
+           "expression": "`agent_action`"
+          },
+          {
+           "name": "audit_problem",
+           "expression": "`audit_problem`"
+          }
+         ],
+         "disaggregated": true
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "table",
+       "encodings": {
+        "columns": [
+         {
+          "fieldName": "as_of",
+          "displayName": "as_of"
+         },
+         {
+          "fieldName": "target_date",
+          "displayName": "target_date"
+         },
+         {
+          "fieldName": "model_signal",
+          "displayName": "model_signal"
+         },
+         {
+          "fieldName": "agent_action",
+          "displayName": "agent_action"
+         },
+         {
+          "fieldName": "audit_problem",
+          "displayName": "audit_problem"
+         }
+        ]
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Audit problems"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 12,
+      "width": 6,
+      "height": 5
+     }
+    }
+   ]
+  }
+ ]
+}

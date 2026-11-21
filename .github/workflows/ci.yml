@@ -1,0 +1,38 @@
+# The offline suite, lint and typecheck: no secret, no workspace, no Chrome.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      # No Databricks profile exists here; this path makes any accidental lookup fail fast.
+      DATABRICKS_CONFIG_FILE: /dev/null
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-java@v6.2.0
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          version: "0.13.5"
+      # uv takes Python from .python-version. No `--extra agent`: the agent's layers need the
+      # Claude CLI login, so they skip here (importorskip) and run on the Mac.
+      - run: uv sync --locked
+      - run: uv run --no-sync ruff check src app tests
+      # The package and the App, as [tool.mypy] files lists them.
+      - run: uv run --no-sync mypy
+      # tests/ui drives the Mac's Chrome and tests/integration needs the dev workspace.
+      - run: >-
+          uv run --no-sync pytest -q -m "not integration and not live"
+          tests/unit tests/contract tests/spark tests/app tests/process

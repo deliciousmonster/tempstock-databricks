@@ -1,0 +1,1225 @@
+{
+  "plan_version": 2,
+  "cli_version": "1.26.0",
+  "plan": {
+    "resources.apps.ui_app": {
+      "depends_on": [
+        {
+          "node": "resources.schemas.app",
+          "label": "${resources.schemas.app.name}"
+        },
+        {
+          "node": "resources.schemas.signals",
+          "label": "${resources.schemas.signals.name}"
+        }
+      ],
+      "action": "create",
+      "new_state": {
+        "value": {
+          "config": {
+            "command": [
+              "python",
+              "-m",
+              "ws_ui"
+            ],
+            "env": [
+              {
+                "name": "WS_UI_CATALOG",
+                "value": "workspace"
+              },
+              {
+                "name": "WS_UI_SCHEMA",
+                "value": "t9_app"
+              },
+              {
+                "name": "WS_UI_SNAPSHOT",
+                "value": "/Volumes/workspace/t9_signals/ui/snapshot.json"
+              },
+              {
+                "name": "WS_UI_WAREHOUSE_ID",
+                "value_from": "sql-warehouse"
+              }
+            ]
+          },
+          "description": "weather-signal, read-only. Personal demo, not investment advice.",
+          "name": "t9-weather-signal-ui",
+          "resources": [
+            {
+              "name": "sql-warehouse",
+              "sql_warehouse": {
+                "id": "wh-2",
+                "permission": "CAN_USE"
+              }
+            },
+            {
+              "name": "ui-volume",
+              "uc_securable": {
+                "permission": "READ_VOLUME",
+                "securable_full_name": "workspace.t9_signals.ui",
+                "securable_type": "VOLUME"
+              }
+            }
+          ],
+          "source_code_path": "/Workspace/Users/owner@example.com/.bundle/weather-signal/scratch-t9_/files/app"
+        }
+      }
+    },
+    "resources.apps.ui_app.permissions": {
+      "depends_on": [
+        {
+          "node": "resources.apps.ui_app",
+          "label": "${resources.apps.ui_app.id}"
+        }
+      ],
+      "action": "create",
+      "new_state": {
+        "value": {
+          "object_id": "",
+          "__embed__": [
+            {
+              "level": "CAN_USE",
+              "service_principal_name": "sp-0"
+            },
+            {
+              "level": "CAN_MANAGE",
+              "user_name": "owner@example.com"
+            }
+          ]
+        },
+        "vars": {
+          "object_id": "/apps/${resources.apps.ui_app.id}"
+        }
+      }
+    },
+    "resources.dashboards.ui_dashboard": {
+      "depends_on": [
+        {
+          "node": "resources.schemas.app",
+          "label": "${resources.schemas.app.name}"
+        }
+      ],
+      "action": "create",
+      "new_state": {
+        "value": {
+          "dataset_catalog": "workspace",
+          "dataset_schema": "t9_app",
+          "display_name": "t9_weather-signal",
+          "embed_credentials": false,
+          "parent_path": "/Workspace/Users/owner@example.com/.bundle/weather-signal/scratch-t9_/resources",
+          "published": true,
+          "serialized_dashboard": "{\n \"datasets\": [\n  {\n   \"name\": \"status\",\n   \"displayName\": \"status\",\n   \"queryLines\": [\n    \"SELECT latest_signal_as_of, latest_agent_as_of, open_incident, post_verified_as_of, guarded_tables, \",\n    \"audit_problems, last_run_outcome, last_run_route, read_at FROM v_ui_status\"\n   ]\n  },\n  {\n   \"name\": \"sources\",\n   \"displayName\": \"sources\",\n   \"queryLines\": [\n    \"SELECT kind, layer, name, at, n, n_bad, state, \",\n    \"CASE WHEN kind = 'fresh' AND name = 'temp_index_daily' THEN 'latest data day' \",\n    \"WHEN kind = 'fresh' THEN 'latest known_at' WHEN kind = 'source' THEN 'last landed' \",\n    \"WHEN state = 'COMPLETED' THEN 'checked' ELSE concat('pipeline update ', coalesce(state, 'unknown')) END AS label \",\n    \"FROM v_ui_sources WHERE kind <> 'fill_shape' ORDER BY kind, layer, name\"\n   ]\n  },\n  {\n   \"name\": \"outlook\",\n   \"displayName\": \"outlook\",\n   \"queryLines\": [\n    \"SELECT target_date, horizon_days, coalesce(shown_action, 'no agent call') AS call, \",\n    \"signal_action AS model_signal, signal_confidence, forecast_anomaly_c, \",\n    \"CASE WHEN forecast_anomaly_c IS NULL THEN 'no normal' ELSE 'normal' END AS anomaly_basis, \",\n    \"downgrade_reason, coalesce(run_outcome, 'no run recorded') AS run_outcome, \",\n    \"coalesce(audit_problem, 'none') AS audit, written_at FROM v_ui_outlook ORDER BY horizon_days\"\n   ]\n  },\n  {\n   \"name\": \"close\",\n   \"displayName\": \"close\",\n   \"queryLines\": [\n    \"SELECT date, close FROM v_ui_index WHERE close IS NOT NULL ORDER BY date\"\n   ]\n  },\n  {\n   \"name\": \"anomaly_monthly\",\n   \"displayName\": \"anomaly_monthly\",\n   \"queryLines\": [\n    \"WITH m AS (SELECT explode(sequence(date_trunc('MONTH', min(date)), date_trunc('MONTH', max(date)), \",\n    \"INTERVAL 1 MONTH)) AS month FROM v_ui_index WHERE index_c IS NOT NULL), \",\n    \"a AS (SELECT date_trunc('MONTH', date) AS month, avg(anomaly_c) AS anomaly_c FROM v_ui_index GROUP BY 1) \",\n    \"SELECT m.month, a.anomaly_c FROM m LEFT JOIN a ON a.month = m.month ORDER BY m.month\"\n   ]\n  },\n  {\n   \"name\": \"history_calls\",\n   \"displayName\": \"history_calls\",\n   \"queryLines\": [\n    \"SELECT target_date, coalesce(shown_action, 'no agent call') AS call, signal_action AS model_signal, \",\n    \"source, coalesce(audit_problem, 'none') AS audit, last_close FROM v_ui_calls WHERE horizon_days = 0 \",\n    \"QUALIFY row_number() OVER (PARTITION BY target_date ORDER BY as_of DESC) = 1 ORDER BY target_date DESC\"\n   ]\n  },\n  {\n   \"name\": \"firmed\",\n   \"displayName\": \"firmed\",\n   \"queryLines\": [\n    \"SELECT target_date, horizon_days, coalesce(max_by(shown_action, as_of), 'no agent call') AS call, \",\n    \"max_by(signal_action, as_of) AS model_signal FROM v_ui_calls \",\n    \"WHERE target_date \u003e= current_date() - 30 GROUP BY ALL ORDER BY target_date DESC, horizon_days DESC\"\n   ]\n  },\n  {\n   \"name\": \"firmed_changed\",\n   \"displayName\": \"firmed_changed\",\n   \"queryLines\": [\n    \"SELECT count_if(a6 \u003c\u003e a0) AS changed, count(*) AS dates FROM (SELECT target_date, \",\n    \"max_by(shown_action, as_of) FILTER (WHERE horizon_days = 6) AS a6, \",\n    \"max_by(shown_action, as_of) FILTER (WHERE horizon_days = 0) AS a0 FROM v_ui_calls GROUP BY target_date) \",\n    \"WHERE a6 IS NOT NULL AND a0 IS NOT NULL\"\n   ]\n  },\n  {\n   \"name\": \"runs_daily\",\n   \"displayName\": \"runs_daily\",\n   \"queryLines\": [\n    \"SELECT date(started_at) AS day, coalesce(outcome, 'unknown') AS outcome, count(*) AS runs \",\n    \"FROM v_ui_agent_runs GROUP BY ALL ORDER BY day\"\n   ]\n  },\n  {\n   \"name\": \"routes\",\n   \"displayName\": \"routes\",\n   \"queryLines\": [\n    \"SELECT coalesce(route, 'unknown') AS route, count(*) AS runs FROM v_ui_agent_runs GROUP BY 1\"\n   ]\n  },\n  {\n   \"name\": \"durations\",\n   \"displayName\": \"durations\",\n   \"queryLines\": [\n    \"SELECT percentile(duration_s, 0.5) AS p50_s, max(duration_s) AS max_s, count(*) AS runs FROM v_ui_agent_runs\"\n   ]\n  },\n  {\n   \"name\": \"audit\",\n   \"displayName\": \"audit\",\n   \"queryLines\": [\n    \"SELECT as_of, target_date, signal_action AS model_signal, agent_action, audit_problem FROM v_ui_calls \",\n    \"WHERE audit_problem IS NOT NULL ORDER BY as_of DESC\"\n   ]\n  }\n ],\n \"pages\": [\n  {\n   \"name\": \"sources\",\n   \"displayName\": \"Sources\",\n   \"pageType\": \"PAGE_TYPE_CANVAS\",\n   \"layout\": [\n    {\n     \"widget\": {\n      \"name\": \"sources-title\",\n      \"multilineTextboxSpec\": {\n       \"lines\": [\n        \"## Sources\\n\",\n        \"What landed, how fresh each layer is, and the last pipeline update with its expectations. Signals is shown by freshness only.\\n\",\n        \"\\n_Personal demo. Not investment advice. Weather data by Open-Meteo.com (CC BY 4.0)._\"\n       ]\n      }\n     },\n     \"position\": {\n      \"x\": 0,\n      \"y\": 0,\n      \"width\": 6,\n      \"height\": 2\n     }\n    },\n    {\n     \"widget\": {\n      \"name\": \"sources-guard\",\n      \"queries\": [\n       {\n        \"name\": \"main_query\",\n        \"query\": {\n         \"datasetName\": \"status\",\n         \"fields\": [\n          {\n           \"name\": \"open_incident\",\n           \"expression\": \"`open_incident`\"\n          },\n          {\n           \"name\": \"post_verified_as_of\",\n           \"expression\": \"`post_verified_as_of`\"\n          },\n          {\n           \"name\": \"guarded_tables\",\n           \"expression\": \"`guarded_tables`\"\n          },\n          {\n           \"name\": \"audit_problems\",\n           \"expression\": \"`audit_problems`\"\n          },\n          {\n           \"name\": \"read_at\",\n           \"expression\": \"`read_at`\"\n          }\n         ],\n         \"disaggregated\": true\n        }\n       }\n      ],\n      \"spec\": {\n       \"version\": 2,\n       \"widgetType\": \"table\",\n       \"encodings\": {\n        \"columns\": [\n         {\n          \"fieldName\": \"open_incident\",\n          \"displayName\": \"open_incident\"\n         },\n         {\n          \"fieldName\": \"post_verified_as_of\",\n          \"displayName\": \"post_verified_as_of\"\n         },\n         {\n          \"fieldName\": \"guarded_tables\",\n          \"displayName\": \"guarded_tables\"\n         },\n         {\n          \"fieldName\": \"audit_problems\",\n          \"displayName\": \"audit_problems\"\n         },\n         {\n          \"fieldName\": \"read_at\",\n          \"displayName\": \"read_at\"\n         }\n        ]\n       },\n       \"frame\": {\n        \"showTitle\": true,\n        \"title\": \"Guard inputs as read (no verified claim: the dashboard cannot see when it is viewed)\"\n       }\n      }\n     },\n     \"position\": {\n      \"x\": 0,\n      \"y\": 2,\n      \"width\": 6,\n      \"height\": 2\n     }\n    },\n    {\n     \"widget\": {\n      \"name\": \"sources-table\",\n      \"queries\": [\n       {\n        \"name\": \"main_query\",\n        \"query\": {\n         \"datasetName\": \"sources\",\n         \"fields\": [\n          {\n           \"name\": \"kind\",\n           \"expression\": \"`kind`\"\n          },\n          {\n           \"name\": \"layer\",\n           \"expression\": \"`layer`\"\n          },\n          {\n           \"name\": \"name\",\n           \"expression\": \"`name`\"\n          },\n          {\n           \"name\": \"label\",\n           \"expression\": \"`label`\"\n          },\n          {\n           \"name\": \"at\",\n           \"expression\": \"`at`\"\n          },\n          {\n           \"name\": \"n\",\n           \"expression\": \"`n`\"\n          },\n          {\n           \"name\": \"n_bad\",\n           \"expression\": \"`n_bad`\"\n          },\n          {\n           \"name\": \"state\",\n           \"expression\": \"`state`\"\n          }\n         ],\n         \"disaggregated\": true\n        }\n       }\n      ],\n      \"spec\": {\n       \"version\": 2,\n       \"widgetType\": \"table\",\n       \"encodings\": {\n        \"columns\": [\n         {\n          \"fieldName\": \"kind\",\n          \"displayName\": \"kind\"\n         },\n         {\n          \"fieldName\": \"layer\",\n          \"displayName\": \"layer\"\n         },\n         {\n          \"fieldName\": \"name\",\n          \"displayName\": \"name\"\n         },\n         {\n          \"fieldName\": \"label\",\n          \"displayName\": \"label\"\n         },\n         {\n          \"fieldName\": \"at\",\n          \"displayName\": \"at\"\n         },\n         {\n          \"fieldName\": \"n\",\n          \"displayName\": \"n\"\n         },\n         {\n          \"fieldName\": \"n_bad\",\n          \"displayName\": \"n_bad\"\n         },\n         {\n          \"fieldName\": \"state\",\n          \"displayName\": \"state\"\n         }\n        ]\n       },\n       \"frame\": {\n        \"showTitle\": true,\n        \"title\": \"Sources, freshness and expectations\"\n       }\n      }\n     },\n     \"position\": {\n      \"x\": 0,\n      \"y\": 4,\n      \"width\": 6,\n      \"height\": 7\n     }\n    }\n   ]\n  },\n  {\n   \"name\": \"outlook\",\n   \"displayName\": \"Outlook\",\n   \"pageType\": \"PAGE_TYPE_CANVAS\",\n   \"layout\": [\n    {\n     \"widget\": {\n      \"name\": \"outlook-title\",\n      \"multilineTextboxSpec\": {\n       \"lines\": [\n        \"## Outlook\\n\",\n        \"Calls are the agent's actions; 'no agent call' rows show the model signal beside them, which is not a call.\\n\",\n        \"\\n_Personal demo. Not investment advice. Weather data by Open-Meteo.com (CC BY 4.0)._\"\n       ]\n      }\n     },\n     \"position\": {\n      \"x\": 0,\n      \"y\": 0,\n      \"width\": 6,\n      \"height\": 2\n     }\n    },\n    {\n     \"widget\": {\n      \"name\": \"outlook-guard\",\n      \"queries\": [\n       {\n        \"name\": \"main_query\",\n        \"query\": {\n         \"datasetName\": \"status\",\n         \"fields\": [\n          {\n           \"name\": \"open_incident\",\n           \"expression\": \"`open_incident`\"\n          },\n          {\n           \"name\": \"post_verified_as_of\",\n           \"expression\": \"`post_verified_as_of`\"\n          },\n          {\n           \"name\": \"guarded_tables\",\n           \"expression\": \"`guarded_tables`\"\n          },\n          {\n           \"name\": \"audit_problems\",\n           \"expression\": \"`audit_problems`\"\n          },\n          {\n           \"name\": \"read_at\",\n           \"expression\": \"`read_at`\"\n          }\n         ],\n         \"disaggregated\": true\n        }\n       }\n      ],\n      \"spec\": {\n       \"version\": 2,\n       \"widgetType\": \"table\",\n       \"encodings\": {\n        \"columns\": [\n         {\n          \"fieldName\": \"open_incident\",\n          \"displayName\": \"open_incident\"\n         },\n         {\n          \"fieldName\": \"post_verified_as_of\",\n          \"displayName\": \"post_verified_as_of\"\n         },\n         {\n          \"fieldName\": \"guarded_tables\",\n          \"displayName\": \"guarded_tables\"\n         },\n         {\n          \"fieldName\": \"audit_problems\",\n          \"displayName\": \"audit_problems\"\n         },\n         {\n          \"fieldName\": \"read_at\",\n          \"displayName\": \"read_at\"\n         }\n        ]\n       },\n       \"frame\": {\n        \"showTitle\": true,\n        \"title\": \"Guard inputs as read (no verified claim: the dashboard cannot see when it is viewed)\"\n       }\n      }\n     },\n     \"position\": {\n      \"x\": 0,\n      \"y\": 2,\n      \"width\": 6,\n      \"height\": 2\n     }\n    },\n    {\n     \"widget\": {\n      \"name\": \"outlook-status\",\n      \"queries\": [\n       {\n        \"name\": \"main_query\",\n        \"query\": {\n         \"datasetName\": \"status\",\n         \"fields\": [\n          {\n           \"name\": \"latest_signal_as_of\",\n           \"expression\": \"`latest_signal_as_of`\"\n          },\n          {\n           \"name\": \"latest_agent_as_of\",\n           \"expression\": \"`latest_agent_as_of`\"\n          },\n          {\n           \"name\": \"last_run_outcome\",\n           \"expression\": \"`last_run_outcome`\"\n          },\n          {\n           \"name\": \"last_run_route\",\n           \"expression\": \"`last_run_route`\"\n          }\n         ],\n         \"disaggregated\": true\n        }\n       }\n      ],\n      \"spec\": {\n       \"version\": 2,\n       \"widgetType\": \"table\",\n       \"encodings\": {\n        \"columns\": [\n         {\n          \"fieldName\": \"latest_signal_as_of\",\n          \"displayName\": \"latest_signal_as_of\"\n         },\n         {\n          \"fieldName\": \"latest_agent_as_of\",\n          \"displayName\": \"latest_agent_as_of\"\n         },\n         {\n          \"fieldName\": \"last_run_outcome\",\n          \"displayName\": \"last_run_outcome\"\n         },\n         {\n          \"fieldName\": \"last_run_route\",\n          \"displayName\": \"last_run_route\"\n         }\n        ]\n       },\n       \"frame\": {\n        \"showTitle\": true,\n        \"title\": \"Latest\"\n       }\n      }\n     },\n     \"position\": {\n      \"x\": 0,\n      \"y\": 4,\n      \"width\": 6,\n      \"height\": 2\n     }\n    },\n    {\n     \"widget\": {\n      \"name\": \"outlook-calls\",\n      \"queries\": [\n       {\n        \"name\": \"main_query\",\n        \"query\": {\n         \"datasetName\": \"outlook\",\n         \"fields\": [\n          {\n           \"name\": \"target_date\",\n           \"expression\": \"`target_date`\"\n          },\n          {\n           \"name\": \"horizon_days\",\n           \"expression\": \"`horizon_days`\"\n          },\n          {\n           \"name\": \"call\",\n           \"expression\": \"`call`\"\n          },\n          {\n           \"name\": \"model_signal\",\n           \"expression\": \"`model_signal`\"\n          },\n          {\n           \"name\": \"signal_confidence\",\n           \"expression\": \"`signal_confidence`\"\n          },\n          {\n           \"name\": \"forecast_anomaly_c\",\n           \"expression\": \"`forecast_anomaly_c`\"\n          },\n          {\n           \"name\": \"anomaly_basis\",\n           \"expression\": \"`anomaly_basis`\"\n          },\n          {\n           \"name\": \"downgrade_reason\",\n           \"expression\": \"`downgrade_reason`\"\n          },\n          {\n           \"name\": \"run_outcome\",\n           \"expression\": \"`run_outcome`\"\n          },\n          {\n           \"name\": \"audit\",\n           \"expression\": \"`audit`\"\n          }\n         ],\n         \"disaggregated\": true\n        }\n       }\n      ],\n      \"spec\": {\n       \"version\": 2,\n       \"widgetType\": \"table\",\n       \"encodings\": {\n        \"columns\": [\n         {\n          \"fieldName\": \"target_date\",\n          \"displayName\": \"target_date\"\n         },\n         {\n          \"fieldName\": \"horizon_days\",\n          \"displayName\": \"horizon_days\"\n         },\n         {\n          \"fieldName\": \"call\",\n          \"displayName\": \"call\"\n         },\n         {\n          \"fieldName\": \"model_signal\",\n          \"displayName\": \"model_signal\"\n         },\n         {\n          \"fieldName\": \"signal_confidence\",\n          \"displayName\": \"signal_confidence\"\n         },\n         {\n          \"fieldName\": \"forecast_anomaly_c\",\n          \"displayName\": \"forecast_anomaly_c\"\n         },\n         {\n          \"fieldName\": \"anomaly_basis\",\n          \"displayName\": \"anomaly_basis\"\n         },\n         {\n          \"fieldName\": \"downgrade_reason\",\n          \"displayName\": \"downgrade_reason\"\n         },\n         {\n          \"fieldName\": \"run_outcome\",\n          \"displayName\": \"run_outcome\"\n         },\n         {\n          \"fieldName\": \"audit\",\n          \"displayName\": \"audit\"\n         }\n        ]\n       },\n       \"frame\": {\n        \"showTitle\": true,\n        \"title\": \"The seven calls of the latest outlook\"\n       }\n      }\n     },\n     \"position\": {\n      \"x\": 0,\n      \"y\": 6,\n      \"width\": 6,\n      \"height\": 5\n     }\n    },\n    {\n     \"widget\": {\n      \"name\": \"outlook-anomaly\",\n      \"queries\": [\n       {\n        \"name\": \"main_query\",\n        \"query\": {\n         \"datasetName\": \"outlook\",\n         \"fields\": [\n          {\n           \"name\": \"target_date\",\n           \"expression\": \"`target_date`\"\n          },\n          {\n           \"name\": \"forecast_anomaly_c\",\n           \"expression\": \"`forecast_anomaly_c`\"\n          },\n          {\n           \"name\": \"call\",\n           \"expression\": \"`call`\"\n          }\n         ],\n         \"disaggregated\": true\n        }\n       }\n      ],\n      \"spec\": {\n       \"version\": 3,\n       \"widgetType\": \"bar\",\n       \"encodings\": {\n        \"x\": {\n         \"fieldName\": \"target_date\",\n         \"scale\": {\n          \"type\": \"temporal\"\n         },\n         \"displayName\": \"Target date\"\n        },\n        \"y\": {\n         \"fieldName\": \"forecast_anomaly_c\",\n         \"scale\": {\n          \"type\": \"quantitative\"\n         },\n         \"displayName\": \"Forecast anomaly (°C)\"\n        },\n        \"color\": {\n         \"fieldName\": \"call\",\n         \"scale\": {\n          \"type\": \"categorical\"\n         },\n         \"displayName\": \"Call\"\n        }\n       },\n       \"frame\": {\n        \"showTitle\": true,\n        \"title\": \"Forecast anomaly by date, coloured by call (no bar: no normal)\"\n       }\n      }\n     },\n     \"position\": {\n      \"x\": 0,\n      \"y\": 11,\n      \"width\": 6,\n      \"height\": 5\n     }\n    }\n   ]\n  },\n  {\n   \"name\": \"history\",\n   \"displayName\": \"History\",\n   \"pageType\": \"PAGE_TYPE_CANVAS\",\n   \"layout\": [\n    {\n     \"widget\": {\n      \"name\": \"history-title\",\n      \"multilineTextboxSpec\": {\n       \"lines\": [\n        \"## History\\n\",\n        \"WMT close over the price history, and the US temperature index against its normal by month. Months without index data are blank, not joined.\\n\",\n        \"\\n_Personal demo. Not investment advice. Weather data by Open-Meteo.com (CC BY 4.0)._\"\n       ]\n      }\n     },\n     \"position\": {\n      \"x\": 0,\n      \"y\": 0,\n      \"width\": 6,\n      \"height\": 2\n     }\n    },\n    {\n     \"widget\": {\n      \"name\": \"history-guard\",\n      \"queries\": [\n       {\n        \"name\": \"main_query\",\n        \"query\": {\n         \"datasetName\": \"status\",\n         \"fields\": [\n          {\n           \"name\": \"open_incident\",\n           \"expression\": \"`open_incident`\"\n          },\n          {\n           \"name\": \"post_verified_as_of\",\n           \"expression\": \"`post_verified_as_of`\"\n          },\n          {\n           \"name\": \"guarded_tables\",\n           \"expression\": \"`guarded_tables`\"\n          },\n          {\n           \"name\": \"audit_problems\",\n           \"expression\": \"`audit_problems`\"\n          },\n          {\n           \"name\": \"read_at\",\n           \"expression\": \"`read_at`\"\n          }\n         ],\n         \"disaggregated\": true\n        }\n       }\n      ],\n      \"spec\": {\n       \"version\": 2,\n       \"widgetType\": \"table\",\n       \"encodings\": {\n        \"columns\": [\n         {\n          \"fieldName\": \"open_incident\",\n          \"displayName\": \"open_incident\"\n         },\n         {\n          \"fieldName\": \"post_verified_as_of\",\n          \"displayName\": \"post_verified_as_of\"\n         },\n         {\n          \"fieldName\": \"guarded_tables\",\n          \"displayName\": \"guarded_tables\"\n         },\n         {\n          \"fieldName\": \"audit_problems\",\n          \"displayName\": \"audit_problems\"\n         },\n         {\n          \"fieldName\": \"read_at\",\n          \"displayName\": \"read_at\"\n         }\n        ]\n       },\n       \"frame\": {\n        \"showTitle\": true,\n        \"title\": \"Guard inputs as read (no verified claim: the dashboard cannot see when it is viewed)\"\n       }\n      }\n     },\n     \"position\": {\n      \"x\": 0,\n      \"y\": 2,\n      \"width\": 6,\n      \"height\": 2\n     }\n    },\n    {\n     \"widget\": {\n      \"name\": \"history-close\",\n      \"queries\": [\n       {\n        \"name\": \"main_query\",\n        \"query\": {\n         \"datasetName\": \"close\",\n         \"fields\": [\n          {\n           \"name\": \"date\",\n           \"expression\": \"`date`\"\n          },\n          {\n           \"name\": \"close\",\n           \"expression\": \"`close`\"\n          }\n         ],\n         \"disaggregated\": true\n        }\n       }\n      ],\n      \"spec\": {\n       \"version\": 3,\n       \"widgetType\": \"line\",\n       \"encodings\": {\n        \"x\": {\n         \"fieldName\": \"date\",\n         \"scale\": {\n          \"type\": \"temporal\"\n         },\n         \"displayName\": \"Date\"\n        },\n        \"y\": {\n         \"fieldName\": \"close\",\n         \"scale\": {\n          \"type\": \"quantitative\"\n         },\n         \"displayName\": \"WMT close (USD)\"\n        }\n       },\n       \"frame\": {\n        \"showTitle\": true,\n        \"title\": \"WMT close\"\n       }\n      }\n     },\n     \"position\": {\n      \"x\": 0,\n      \"y\": 4,\n      \"width\": 6,\n      \"height\": 5\n     }\n    },\n    {\n     \"widget\": {\n      \"name\": \"history-anomaly\",\n      \"queries\": [\n       {\n        \"name\": \"main_query\",\n        \"query\": {\n         \"datasetName\": \"anomaly_monthly\",\n         \"fields\": [\n          {\n           \"name\": \"month\",\n           \"expression\": \"`month`\"\n          },\n          {\n           \"name\": \"anomaly_c\",\n           \"expression\": \"`anomaly_c`\"\n          }\n         ],\n         \"disaggregated\": true\n        }\n       }\n      ],\n      \"spec\": {\n       \"version\": 3,\n       \"widgetType\": \"line\",\n       \"encodings\": {\n        \"x\": {\n         \"fieldName\": \"month\",\n         \"scale\": {\n          \"type\": \"temporal\"\n         },\n         \"displayName\": \"Month\"\n        },\n        \"y\": {\n         \"fieldName\": \"anomaly_c\",\n         \"scale\": {\n          \"type\": \"quantitative\"\n         },\n         \"displayName\": \"Temperature anomaly, monthly mean (°C)\"\n        }\n       },\n       \"frame\": {\n        \"showTitle\": true,\n        \"title\": \"Temperature index anomaly, monthly mean (C)\"\n       }\n      }\n     },\n     \"position\": {\n      \"x\": 0,\n      \"y\": 9,\n      \"width\": 6,\n      \"height\": 5\n     }\n    },\n    {\n     \"widget\": {\n      \"name\": \"history-calls\",\n      \"queries\": [\n       {\n        \"name\": \"main_query\",\n        \"query\": {\n         \"datasetName\": \"history_calls\",\n         \"fields\": [\n          {\n           \"name\": \"target_date\",\n           \"expression\": \"`target_date`\"\n          },\n          {\n           \"name\": \"call\",\n           \"expression\": \"`call`\"\n          },\n          {\n           \"name\": \"model_signal\",\n           \"expression\": \"`model_signal`\"\n          },\n          {\n           \"name\": \"source\",\n           \"expression\": \"`source`\"\n          },\n          {\n           \"name\": \"audit\",\n           \"expression\": \"`audit`\"\n          },\n          {\n           \"name\": \"last_close\",\n           \"expression\": \"`last_close`\"\n          }\n         ],\n         \"disaggregated\": true\n        }\n       }\n      ],\n      \"spec\": {\n       \"version\": 2,\n       \"widgetType\": \"table\",\n       \"encodings\": {\n        \"columns\": [\n         {\n          \"fieldName\": \"target_date\",\n          \"displayName\": \"target_date\"\n         },\n         {\n          \"fieldName\": \"call\",\n          \"displayName\": \"call\"\n         },\n         {\n          \"fieldName\": \"model_signal\",\n          \"displayName\": \"model_signal\"\n         },\n         {\n          \"fieldName\": \"source\",\n          \"displayName\": \"source\"\n         },\n         {\n          \"fieldName\": \"audit\",\n          \"displayName\": \"audit\"\n         },\n         {\n          \"fieldName\": \"last_close\",\n          \"displayName\": \"last_close\"\n         }\n        ]\n       },\n       \"frame\": {\n        \"showTitle\": true,\n        \"title\": \"Each day's horizon-0 call\"\n       }\n      }\n     },\n     \"position\": {\n      \"x\": 0,\n      \"y\": 14,\n      \"width\": 6,\n      \"height\": 6\n     }\n    }\n   ]\n  },\n  {\n   \"name\": \"firmed\",\n   \"displayName\": \"How calls firmed\",\n   \"pageType\": \"PAGE_TYPE_CANVAS\",\n   \"layout\": [\n    {\n     \"widget\": {\n      \"name\": \"firmed-title\",\n      \"multilineTextboxSpec\": {\n       \"lines\": [\n        \"## How calls firmed\\n\",\n        \"Each target date's latest call at each horizon, last 30 days.\\n\",\n        \"\\n_Personal demo. Not investment advice. Weather data by Open-Meteo.com (CC BY 4.0)._\"\n       ]\n      }\n     },\n     \"position\": {\n      \"x\": 0,\n      \"y\": 0,\n      \"width\": 6,\n      \"height\": 2\n     }\n    },\n    {\n     \"widget\": {\n      \"name\": \"firmed-guard\",\n      \"queries\": [\n       {\n        \"name\": \"main_query\",\n        \"query\": {\n         \"datasetName\": \"status\",\n         \"fields\": [\n          {\n           \"name\": \"open_incident\",\n           \"expression\": \"`open_incident`\"\n          },\n          {\n           \"name\": \"post_verified_as_of\",\n           \"expression\": \"`post_verified_as_of`\"\n          },\n          {\n           \"name\": \"guarded_tables\",\n           \"expression\": \"`guarded_tables`\"\n          },\n          {\n           \"name\": \"audit_problems\",\n           \"expression\": \"`audit_problems`\"\n          },\n          {\n           \"name\": \"read_at\",\n           \"expression\": \"`read_at`\"\n          }\n         ],\n         \"disaggregated\": true\n        }\n       }\n      ],\n      \"spec\": {\n       \"version\": 2,\n       \"widgetType\": \"table\",\n       \"encodings\": {\n        \"columns\": [\n         {\n          \"fieldName\": \"open_incident\",\n          \"displayName\": \"open_incident\"\n         },\n         {\n          \"fieldName\": \"post_verified_as_of\",\n          \"displayName\": \"post_verified_as_of\"\n         },\n         {\n          \"fieldName\": \"guarded_tables\",\n          \"displayName\": \"guarded_tables\"\n         },\n         {\n          \"fieldName\": \"audit_problems\",\n          \"displayName\": \"audit_problems\"\n         },\n         {\n          \"fieldName\": \"read_at\",\n          \"displayName\": \"read_at\"\n         }\n        ]\n       },\n       \"frame\": {\n        \"showTitle\": true,\n        \"title\": \"Guard inputs as read (no verified claim: the dashboard cannot see when it is viewed)\"\n       }\n      }\n     },\n     \"position\": {\n      \"x\": 0,\n      \"y\": 2,\n      \"width\": 6,\n      \"height\": 2\n     }\n    },\n    {\n     \"widget\": {\n      \"name\": \"firmed-changed\",\n      \"queries\": [\n       {\n        \"name\": \"main_query\",\n        \"query\": {\n         \"datasetName\": \"firmed_changed\",\n         \"fields\": [\n          {\n           \"name\": \"changed\",\n           \"expression\": \"`changed`\"\n          }\n         ],\n         \"disaggregated\": true\n        }\n       }\n      ],\n      \"spec\": {\n       \"version\": 2,\n       \"widgetType\": \"counter\",\n       \"encodings\": {\n        \"value\": {\n         \"fieldName\": \"changed\",\n         \"displayName\": \"Dates whose call changed between horizon 6 and 0\"\n        }\n       },\n       \"frame\": {\n        \"showTitle\": true,\n        \"title\": \"Dates whose call changed between horizon 6 and 0\"\n       }\n      }\n     },\n     \"position\": {\n      \"x\": 0,\n      \"y\": 4,\n      \"width\": 3,\n      \"height\": 3\n     }\n    },\n    {\n     \"widget\": {\n      \"name\": \"firmed-dates\",\n      \"queries\": [\n       {\n        \"name\": \"main_query\",\n        \"query\": {\n         \"datasetName\": \"firmed_changed\",\n         \"fields\": [\n          {\n           \"name\": \"dates\",\n           \"expression\": \"`dates`\"\n          }\n         ],\n         \"disaggregated\": true\n        }\n       }\n      ],\n      \"spec\": {\n       \"version\": 2,\n       \"widgetType\": \"counter\",\n       \"encodings\": {\n        \"value\": {\n         \"fieldName\": \"dates\",\n         \"displayName\": \"Dates with both horizons called\"\n        }\n       },\n       \"frame\": {\n        \"showTitle\": true,\n        \"title\": \"Dates with both horizons called\"\n       }\n      }\n     },\n     \"position\": {\n      \"x\": 3,\n      \"y\": 4,\n      \"width\": 3,\n      \"height\": 3\n     }\n    },\n    {\n     \"widget\": {\n      \"name\": \"firmed-table\",\n      \"queries\": [\n       {\n        \"name\": \"main_query\",\n        \"query\": {\n         \"datasetName\": \"firmed\",\n         \"fields\": [\n          {\n           \"name\": \"target_date\",\n           \"expression\": \"`target_date`\"\n          },\n          {\n           \"name\": \"horizon_days\",\n           \"expression\": \"`horizon_days`\"\n          },\n          {\n           \"name\": \"call\",\n           \"expression\": \"`call`\"\n          },\n          {\n           \"name\": \"model_signal\",\n           \"expression\": \"`model_signal`\"\n          }\n         ],\n         \"disaggregated\": true\n        }\n       }\n      ],\n      \"spec\": {\n       \"version\": 2,\n       \"widgetType\": \"table\",\n       \"encodings\": {\n        \"columns\": [\n         {\n          \"fieldName\": \"target_date\",\n          \"displayName\": \"target_date\"\n         },\n         {\n          \"fieldName\": \"horizon_days\",\n          \"displayName\": \"horizon_days\"\n         },\n         {\n          \"fieldName\": \"call\",\n          \"displayName\": \"call\"\n         },\n         {\n          \"fieldName\": \"model_signal\",\n          \"displayName\": \"model_signal\"\n         }\n        ]\n       },\n       \"frame\": {\n        \"showTitle\": true,\n        \"title\": \"Calls by date and horizon\"\n       }\n      }\n     },\n     \"position\": {\n      \"x\": 0,\n      \"y\": 7,\n      \"width\": 6,\n      \"height\": 7\n     }\n    }\n   ]\n  },\n  {\n   \"name\": \"agent\",\n   \"displayName\": \"Agent and integrity\",\n   \"pageType\": \"PAGE_TYPE_CANVAS\",\n   \"layout\": [\n    {\n     \"widget\": {\n      \"name\": \"agent-title\",\n      \"multilineTextboxSpec\": {\n       \"lines\": [\n        \"## Agent and integrity\\n\",\n        \"Agent runs, their routes and durations, and every audit problem.\\n\",\n        \"\\n_Personal demo. Not investment advice. Weather data by Open-Meteo.com (CC BY 4.0)._\"\n       ]\n      }\n     },\n     \"position\": {\n      \"x\": 0,\n      \"y\": 0,\n      \"width\": 6,\n      \"height\": 2\n     }\n    },\n    {\n     \"widget\": {\n      \"name\": \"agent-guard\",\n      \"queries\": [\n       {\n        \"name\": \"main_query\",\n        \"query\": {\n         \"datasetName\": \"status\",\n         \"fields\": [\n          {\n           \"name\": \"open_incident\",\n           \"expression\": \"`open_incident`\"\n          },\n          {\n           \"name\": \"post_verified_as_of\",\n           \"expression\": \"`post_verified_as_of`\"\n          },\n          {\n           \"name\": \"guarded_tables\",\n           \"expression\": \"`guarded_tables`\"\n          },\n          {\n           \"name\": \"audit_problems\",\n           \"expression\": \"`audit_problems`\"\n          },\n          {\n           \"name\": \"read_at\",\n           \"expression\": \"`read_at`\"\n          }\n         ],\n         \"disaggregated\": true\n        }\n       }\n      ],\n      \"spec\": {\n       \"version\": 2,\n       \"widgetType\": \"table\",\n       \"encodings\": {\n        \"columns\": [\n         {\n          \"fieldName\": \"open_incident\",\n          \"displayName\": \"open_incident\"\n         },\n         {\n          \"fieldName\": \"post_verified_as_of\",\n          \"displayName\": \"post_verified_as_of\"\n         },\n         {\n          \"fieldName\": \"guarded_tables\",\n          \"displayName\": \"guarded_tables\"\n         },\n         {\n          \"fieldName\": \"audit_problems\",\n          \"displayName\": \"audit_problems\"\n         },\n         {\n          \"fieldName\": \"read_at\",\n          \"displayName\": \"read_at\"\n         }\n        ]\n       },\n       \"frame\": {\n        \"showTitle\": true,\n        \"title\": \"Guard inputs as read (no verified claim: the dashboard cannot see when it is viewed)\"\n       }\n      }\n     },\n     \"position\": {\n      \"x\": 0,\n      \"y\": 2,\n      \"width\": 6,\n      \"height\": 2\n     }\n    },\n    {\n     \"widget\": {\n      \"name\": \"agent-runs\",\n      \"queries\": [\n       {\n        \"name\": \"main_query\",\n        \"query\": {\n         \"datasetName\": \"runs_daily\",\n         \"fields\": [\n          {\n           \"name\": \"day\",\n           \"expression\": \"`day`\"\n          },\n          {\n           \"name\": \"runs\",\n           \"expression\": \"`runs`\"\n          },\n          {\n           \"name\": \"outcome\",\n           \"expression\": \"`outcome`\"\n          }\n         ],\n         \"disaggregated\": true\n        }\n       }\n      ],\n      \"spec\": {\n       \"version\": 3,\n       \"widgetType\": \"bar\",\n       \"encodings\": {\n        \"x\": {\n         \"fieldName\": \"day\",\n         \"scale\": {\n          \"type\": \"temporal\"\n         },\n         \"displayName\": \"Day\"\n        },\n        \"y\": {\n         \"fieldName\": \"runs\",\n         \"scale\": {\n          \"type\": \"quantitative\"\n         },\n         \"displayName\": \"Runs\"\n        },\n        \"color\": {\n         \"fieldName\": \"outcome\",\n         \"scale\": {\n          \"type\": \"categorical\"\n         },\n         \"displayName\": \"Run outcome\"\n        }\n       },\n       \"frame\": {\n        \"showTitle\": true,\n        \"title\": \"Runs per day by outcome\"\n       }\n      }\n     },\n     \"position\": {\n      \"x\": 0,\n      \"y\": 4,\n      \"width\": 4,\n      \"height\": 5\n     }\n    },\n    {\n     \"widget\": {\n      \"name\": \"agent-routes\",\n      \"queries\": [\n       {\n        \"name\": \"main_query\",\n        \"query\": {\n         \"datasetName\": \"routes\",\n         \"fields\": [\n          {\n           \"name\": \"route\",\n           \"expression\": \"`route`\"\n          },\n          {\n           \"name\": \"runs\",\n           \"expression\": \"`runs`\"\n          }\n         ],\n         \"disaggregated\": true\n        }\n       }\n      ],\n      \"spec\": {\n       \"version\": 3,\n       \"widgetType\": \"bar\",\n       \"encodings\": {\n        \"x\": {\n         \"fieldName\": \"route\",\n         \"scale\": {\n          \"type\": \"categorical\"\n         },\n         \"displayName\": \"Route\"\n        },\n        \"y\": {\n         \"fieldName\": \"runs\",\n         \"scale\": {\n          \"type\": \"quantitative\"\n         },\n         \"displayName\": \"Runs\"\n        }\n       },\n       \"frame\": {\n        \"showTitle\": true,\n        \"title\": \"Runs by route\"\n       }\n      }\n     },\n     \"position\": {\n      \"x\": 4,\n      \"y\": 4,\n      \"width\": 2,\n      \"height\": 5\n     }\n    },\n    {\n     \"widget\": {\n      \"name\": \"agent-p50\",\n      \"queries\": [\n       {\n        \"name\": \"main_query\",\n        \"query\": {\n         \"datasetName\": \"durations\",\n         \"fields\": [\n          {\n           \"name\": \"p50_s\",\n           \"expression\": \"`p50_s`\"\n          }\n         ],\n         \"disaggregated\": true\n        }\n       }\n      ],\n      \"spec\": {\n       \"version\": 2,\n       \"widgetType\": \"counter\",\n       \"encodings\": {\n        \"value\": {\n         \"fieldName\": \"p50_s\",\n         \"displayName\": \"Run duration p50 (s)\"\n        }\n       },\n       \"frame\": {\n        \"showTitle\": true,\n        \"title\": \"Run duration p50 (s)\"\n       }\n      }\n     },\n     \"position\": {\n      \"x\": 0,\n      \"y\": 9,\n      \"width\": 2,\n      \"height\": 3\n     }\n    },\n    {\n     \"widget\": {\n      \"name\": \"agent-max\",\n      \"queries\": [\n       {\n        \"name\": \"main_query\",\n        \"query\": {\n         \"datasetName\": \"durations\",\n         \"fields\": [\n          {\n           \"name\": \"max_s\",\n           \"expression\": \"`max_s`\"\n          }\n         ],\n         \"disaggregated\": true\n        }\n       }\n      ],\n      \"spec\": {\n       \"version\": 2,\n       \"widgetType\": \"counter\",\n       \"encodings\": {\n        \"value\": {\n         \"fieldName\": \"max_s\",\n         \"displayName\": \"Run duration max (s)\"\n        }\n       },\n       \"frame\": {\n        \"showTitle\": true,\n        \"title\": \"Run duration max (s)\"\n       }\n      }\n     },\n     \"position\": {\n      \"x\": 2,\n      \"y\": 9,\n      \"width\": 2,\n      \"height\": 3\n     }\n    },\n    {\n     \"widget\": {\n      \"name\": \"agent-n\",\n      \"queries\": [\n       {\n        \"name\": \"main_query\",\n        \"query\": {\n         \"datasetName\": \"durations\",\n         \"fields\": [\n          {\n           \"name\": \"runs\",\n           \"expression\": \"`runs`\"\n          }\n         ],\n         \"disaggregated\": true\n        }\n       }\n      ],\n      \"spec\": {\n       \"version\": 2,\n       \"widgetType\": \"counter\",\n       \"encodings\": {\n        \"value\": {\n         \"fieldName\": \"runs\",\n         \"displayName\": \"Runs recorded\"\n        }\n       },\n       \"frame\": {\n        \"showTitle\": true,\n        \"title\": \"Runs recorded\"\n       }\n      }\n     },\n     \"position\": {\n      \"x\": 4,\n      \"y\": 9,\n      \"width\": 2,\n      \"height\": 3\n     }\n    },\n    {\n     \"widget\": {\n      \"name\": \"agent-audit\",\n      \"queries\": [\n       {\n        \"name\": \"main_query\",\n        \"query\": {\n         \"datasetName\": \"audit\",\n         \"fields\": [\n          {\n           \"name\": \"as_of\",\n           \"expression\": \"`as_of`\"\n          },\n          {\n           \"name\": \"target_date\",\n           \"expression\": \"`target_date`\"\n          },\n          {\n           \"name\": \"model_signal\",\n           \"expression\": \"`model_signal`\"\n          },\n          {\n           \"name\": \"agent_action\",\n           \"expression\": \"`agent_action`\"\n          },\n          {\n           \"name\": \"audit_problem\",\n           \"expression\": \"`audit_problem`\"\n          }\n         ],\n         \"disaggregated\": true\n        }\n       }\n      ],\n      \"spec\": {\n       \"version\": 2,\n       \"widgetType\": \"table\",\n       \"encodings\": {\n        \"columns\": [\n         {\n          \"fieldName\": \"as_of\",\n          \"displayName\": \"as_of\"\n         },\n         {\n          \"fieldName\": \"target_date\",\n          \"displayName\": \"target_date\"\n         },\n         {\n          \"fieldName\": \"model_signal\",\n          \"displayName\": \"model_signal\"\n         },\n         {\n          \"fieldName\": \"agent_action\",\n          \"displayName\": \"agent_action\"\n         },\n         {\n          \"fieldName\": \"audit_problem\",\n          \"displayName\": \"audit_problem\"\n         }\n        ]\n       },\n       \"frame\": {\n        \"showTitle\": true,\n        \"title\": \"Audit problems\"\n       }\n      }\n     },\n     \"position\": {\n      \"x\": 0,\n      \"y\": 12,\n      \"width\": 6,\n      \"height\": 5\n     }\n    }\n   ]\n  }\n ]\n}\n",
+          "warehouse_id": "wh-2"
+        }
+      }
+    },
+    "resources.dashboards.ui_dashboard.permissions": {
+      "depends_on": [
+        {
+          "node": "resources.dashboards.ui_dashboard",
+          "label": "${resources.dashboards.ui_dashboard.id}"
+        }
+      ],
+      "action": "create",
+      "new_state": {
+        "value": {
+          "object_id": "",
+          "__embed__": [
+            {
+              "level": "CAN_READ",
+              "service_principal_name": "sp-0"
+            },
+            {
+              "level": "CAN_MANAGE",
+              "user_name": "owner@example.com"
+            }
+          ]
+        },
+        "vars": {
+          "object_id": "/dashboards/${resources.dashboards.ui_dashboard.id}"
+        }
+      }
+    },
+    "resources.jobs.backtest": {
+      "action": "create",
+      "new_state": {
+        "value": {
+          "deployment": {
+            "kind": "BUNDLE",
+            "metadata_file_path": "/Workspace/Users/owner@example.com/.bundle/weather-signal/scratch-t9_/state/metadata.json"
+          },
+          "edit_mode": "UI_LOCKED",
+          "email_notifications": {
+            "on_failure": [
+              "owner@example.com"
+            ]
+          },
+          "environments": [
+            {
+              "environment_key": "default",
+              "spec": {
+                "dependencies": [
+                  "/Workspace/Users/owner@example.com/.bundle/weather-signal/scratch-t9_/artifacts/.internal/weather_signal-0.1.0-py3-none-any.whl"
+                ],
+                "environment_version": "4"
+              }
+            }
+          ],
+          "format": "MULTI_TASK",
+          "health": {
+            "rules": [
+              {
+                "metric": "RUN_DURATION_SECONDS",
+                "op": "GREATER_THAN",
+                "value": 1200
+              }
+            ]
+          },
+          "max_concurrent_runs": 1,
+          "name": "t9_weather-signal-backtest",
+          "performance_target": "STANDARD",
+          "queue": {
+            "enabled": false
+          },
+          "tasks": [
+            {
+              "environment_key": "default",
+              "python_wheel_task": {
+                "entry_point": "weather-signal-backtest",
+                "package_name": "weather_signal",
+                "parameters": [
+                  "--catalog",
+                  "workspace",
+                  "--schema-prefix",
+                  "t9_"
+                ]
+              },
+              "task_key": "backtest",
+              "timeout_seconds": 1800
+            }
+          ]
+        }
+      }
+    },
+    "resources.jobs.backtest.permissions": {
+      "depends_on": [
+        {
+          "node": "resources.jobs.backtest",
+          "label": "${resources.jobs.backtest.id}"
+        }
+      ],
+      "action": "create",
+      "new_state": {
+        "value": {
+          "object_id": "",
+          "__embed__": [
+            {
+              "level": "CAN_VIEW",
+              "service_principal_name": "sp-0"
+            },
+            {
+              "level": "IS_OWNER",
+              "user_name": "owner@example.com"
+            }
+          ]
+        },
+        "vars": {
+          "object_id": "/jobs/${resources.jobs.backtest.id}"
+        }
+      }
+    },
+    "resources.jobs.ingest": {
+      "action": "create",
+      "new_state": {
+        "value": {
+          "deployment": {
+            "kind": "BUNDLE",
+            "metadata_file_path": "/Workspace/Users/owner@example.com/.bundle/weather-signal/scratch-t9_/state/metadata.json"
+          },
+          "edit_mode": "UI_LOCKED",
+          "email_notifications": {
+            "on_failure": [
+              "owner@example.com"
+            ]
+          },
+          "environments": [
+            {
+              "environment_key": "default",
+              "spec": {
+                "dependencies": [
+                  "/Workspace/Users/owner@example.com/.bundle/weather-signal/scratch-t9_/artifacts/.internal/weather_signal-0.1.0-py3-none-any.whl"
+                ],
+                "environment_version": "4"
+              }
+            }
+          ],
+          "format": "MULTI_TASK",
+          "health": {
+            "rules": [
+              {
+                "metric": "RUN_DURATION_SECONDS",
+                "op": "GREATER_THAN",
+                "value": 600
+              }
+            ]
+          },
+          "max_concurrent_runs": 1,
+          "name": "t9_weather-signal-ingest",
+          "parameters": [
+            {
+              "default": "false",
+              "name": "catch_up"
+            }
+          ],
+          "performance_target": "STANDARD",
+          "queue": {
+            "enabled": false
+          },
+          "schedule": {
+            "pause_status": "PAUSED",
+            "quartz_cron_expression": "0 5 * * * ?",
+            "timezone_id": "UTC"
+          },
+          "tasks": [
+            {
+              "environment_key": "default",
+              "python_wheel_task": {
+                "entry_point": "weather-signal-ingest",
+                "package_name": "weather_signal",
+                "parameters": [
+                  "--catalog",
+                  "workspace",
+                  "--schema-prefix",
+                  "t9_",
+                  "--secret-scope",
+                  "weather-signal-t9_",
+                  "--p-hours",
+                  "30",
+                  "--catch-up",
+                  "{{job.parameters.catch_up}}"
+                ]
+              },
+              "task_key": "ingest",
+              "timeout_seconds": 900
+            }
+          ]
+        }
+      }
+    },
+    "resources.jobs.ingest.permissions": {
+      "depends_on": [
+        {
+          "node": "resources.jobs.ingest",
+          "label": "${resources.jobs.ingest.id}"
+        }
+      ],
+      "action": "create",
+      "new_state": {
+        "value": {
+          "object_id": "",
+          "__embed__": [
+            {
+              "level": "CAN_VIEW",
+              "service_principal_name": "sp-0"
+            },
+            {
+              "level": "IS_OWNER",
+              "user_name": "owner@example.com"
+            }
+          ]
+        },
+        "vars": {
+          "object_id": "/jobs/${resources.jobs.ingest.id}"
+        }
+      }
+    },
+    "resources.jobs.score": {
+      "depends_on": [
+        {
+          "node": "resources.pipelines.weather_signal",
+          "label": "${resources.pipelines.weather_signal.id}"
+        }
+      ],
+      "action": "create",
+      "new_state": {
+        "value": {
+          "deployment": {
+            "kind": "BUNDLE",
+            "metadata_file_path": "/Workspace/Users/owner@example.com/.bundle/weather-signal/scratch-t9_/state/metadata.json"
+          },
+          "edit_mode": "UI_LOCKED",
+          "email_notifications": {
+            "on_failure": [
+              "owner@example.com"
+            ]
+          },
+          "environments": [
+            {
+              "environment_key": "default",
+              "spec": {
+                "dependencies": [
+                  "/Workspace/Users/owner@example.com/.bundle/weather-signal/scratch-t9_/artifacts/.internal/weather_signal-0.1.0-py3-none-any.whl"
+                ],
+                "environment_version": "4"
+              }
+            }
+          ],
+          "format": "MULTI_TASK",
+          "health": {
+            "rules": [
+              {
+                "metric": "RUN_DURATION_SECONDS",
+                "op": "GREATER_THAN",
+                "value": 1800
+              }
+            ]
+          },
+          "max_concurrent_runs": 1,
+          "name": "t9_weather-signal-score",
+          "performance_target": "STANDARD",
+          "queue": {
+            "enabled": false
+          },
+          "schedule": {
+            "pause_status": "PAUSED",
+            "quartz_cron_expression": "0 30 * * * ?",
+            "timezone_id": "UTC"
+          },
+          "tasks": [
+            {
+              "depends_on": [
+                {
+                  "task_key": "score"
+                }
+              ],
+              "environment_key": "default",
+              "python_wheel_task": {
+                "entry_point": "weather-signal-check",
+                "package_name": "weather_signal",
+                "parameters": [
+                  "--catalog",
+                  "workspace",
+                  "--schema-prefix",
+                  "t9_",
+                  "--p-hours",
+                  "30",
+                  "--as-of",
+                  "{{job.trigger.time.iso_datetime}}"
+                ]
+              },
+              "task_key": "check",
+              "timeout_seconds": 600
+            },
+            {
+              "environment_key": "default",
+              "python_wheel_task": {
+                "entry_point": "weather-signal-guard",
+                "package_name": "weather_signal",
+                "parameters": [
+                  "--catalog",
+                  "workspace",
+                  "--schema-prefix",
+                  "t9_",
+                  "--as-of",
+                  "{{job.trigger.time.iso_datetime}}"
+                ]
+              },
+              "task_key": "guard",
+              "timeout_seconds": 600
+            },
+            {
+              "depends_on": [
+                {
+                  "task_key": "guard"
+                }
+              ],
+              "pipeline_task": {
+                "pipeline_id": "${resources.pipelines.weather_signal.id}"
+              },
+              "task_key": "refresh",
+              "timeout_seconds": 1800
+            },
+            {
+              "depends_on": [
+                {
+                  "task_key": "refresh"
+                }
+              ],
+              "environment_key": "default",
+              "python_wheel_task": {
+                "entry_point": "weather-signal-score",
+                "package_name": "weather_signal",
+                "parameters": [
+                  "--catalog",
+                  "workspace",
+                  "--schema-prefix",
+                  "t9_",
+                  "--p-hours",
+                  "30",
+                  "--as-of",
+                  "{{job.trigger.time.iso_datetime}}"
+                ]
+              },
+              "task_key": "score",
+              "timeout_seconds": 900
+            }
+          ]
+        },
+        "vars": {
+          "tasks[2].pipeline_task.pipeline_id": "${resources.pipelines.weather_signal.id}"
+        }
+      }
+    },
+    "resources.jobs.score.permissions": {
+      "depends_on": [
+        {
+          "node": "resources.jobs.score",
+          "label": "${resources.jobs.score.id}"
+        }
+      ],
+      "action": "create",
+      "new_state": {
+        "value": {
+          "object_id": "",
+          "__embed__": [
+            {
+              "level": "CAN_VIEW",
+              "service_principal_name": "sp-0"
+            },
+            {
+              "level": "IS_OWNER",
+              "user_name": "owner@example.com"
+            }
+          ]
+        },
+        "vars": {
+          "object_id": "/jobs/${resources.jobs.score.id}"
+        }
+      }
+    },
+    "resources.jobs.train": {
+      "action": "create",
+      "new_state": {
+        "value": {
+          "deployment": {
+            "kind": "BUNDLE",
+            "metadata_file_path": "/Workspace/Users/owner@example.com/.bundle/weather-signal/scratch-t9_/state/metadata.json"
+          },
+          "edit_mode": "UI_LOCKED",
+          "email_notifications": {
+            "on_failure": [
+              "owner@example.com"
+            ]
+          },
+          "environments": [
+            {
+              "environment_key": "default",
+              "spec": {
+                "dependencies": [
+                  "/Workspace/Users/owner@example.com/.bundle/weather-signal/scratch-t9_/artifacts/.internal/weather_signal-0.1.0-py3-none-any.whl"
+                ],
+                "environment_version": "4"
+              }
+            }
+          ],
+          "format": "MULTI_TASK",
+          "health": {
+            "rules": [
+              {
+                "metric": "RUN_DURATION_SECONDS",
+                "op": "GREATER_THAN",
+                "value": 1200
+              }
+            ]
+          },
+          "max_concurrent_runs": 1,
+          "name": "t9_weather-signal-train",
+          "performance_target": "STANDARD",
+          "queue": {
+            "enabled": false
+          },
+          "tasks": [
+            {
+              "environment_key": "default",
+              "python_wheel_task": {
+                "entry_point": "weather-signal-train",
+                "package_name": "weather_signal",
+                "parameters": [
+                  "--catalog",
+                  "workspace",
+                  "--schema-prefix",
+                  "t9_"
+                ]
+              },
+              "task_key": "train",
+              "timeout_seconds": 1800
+            }
+          ]
+        }
+      }
+    },
+    "resources.jobs.train.permissions": {
+      "depends_on": [
+        {
+          "node": "resources.jobs.train",
+          "label": "${resources.jobs.train.id}"
+        }
+      ],
+      "action": "create",
+      "new_state": {
+        "value": {
+          "object_id": "",
+          "__embed__": [
+            {
+              "level": "CAN_VIEW",
+              "service_principal_name": "sp-0"
+            },
+            {
+              "level": "IS_OWNER",
+              "user_name": "owner@example.com"
+            }
+          ]
+        },
+        "vars": {
+          "object_id": "/jobs/${resources.jobs.train.id}"
+        }
+      }
+    },
+    "resources.jobs.ui_snapshot": {
+      "action": "create",
+      "new_state": {
+        "value": {
+          "deployment": {
+            "kind": "BUNDLE",
+            "metadata_file_path": "/Workspace/Users/owner@example.com/.bundle/weather-signal/scratch-t9_/state/metadata.json"
+          },
+          "edit_mode": "UI_LOCKED",
+          "email_notifications": {
+            "on_failure": [
+              "owner@example.com"
+            ]
+          },
+          "environments": [
+            {
+              "environment_key": "default",
+              "spec": {
+                "dependencies": [
+                  "/Workspace/Users/owner@example.com/.bundle/weather-signal/scratch-t9_/artifacts/.internal/weather_signal-0.1.0-py3-none-any.whl"
+                ],
+                "environment_version": "4"
+              }
+            }
+          ],
+          "format": "MULTI_TASK",
+          "health": {
+            "rules": [
+              {
+                "metric": "RUN_DURATION_SECONDS",
+                "op": "GREATER_THAN",
+                "value": 600
+              }
+            ]
+          },
+          "max_concurrent_runs": 1,
+          "name": "t9_weather-signal-ui-snapshot",
+          "performance_target": "STANDARD",
+          "queue": {
+            "enabled": false
+          },
+          "schedule": {
+            "pause_status": "PAUSED",
+            "quartz_cron_expression": "0 15 * * * ?",
+            "timezone_id": "UTC"
+          },
+          "tasks": [
+            {
+              "environment_key": "default",
+              "python_wheel_task": {
+                "entry_point": "weather-signal-ui-snapshot",
+                "package_name": "weather_signal",
+                "parameters": [
+                  "--catalog",
+                  "workspace",
+                  "--schema-prefix",
+                  "t9_"
+                ]
+              },
+              "task_key": "snapshot",
+              "timeout_seconds": 900
+            }
+          ]
+        }
+      }
+    },
+    "resources.jobs.ui_snapshot.permissions": {
+      "depends_on": [
+        {
+          "node": "resources.jobs.ui_snapshot",
+          "label": "${resources.jobs.ui_snapshot.id}"
+        }
+      ],
+      "action": "create",
+      "new_state": {
+        "value": {
+          "object_id": "",
+          "__embed__": [
+            {
+              "level": "CAN_VIEW",
+              "service_principal_name": "sp-0"
+            },
+            {
+              "level": "IS_OWNER",
+              "user_name": "owner@example.com"
+            }
+          ]
+        },
+        "vars": {
+          "object_id": "/jobs/${resources.jobs.ui_snapshot.id}"
+        }
+      }
+    },
+    "resources.pipelines.weather_signal": {
+      "depends_on": [
+        {
+          "node": "resources.schemas.daily",
+          "label": "${resources.schemas.daily.name}"
+        },
+        {
+          "node": "resources.schemas.ops",
+          "label": "${resources.schemas.ops.name}"
+        },
+        {
+          "node": "resources.schemas.raw",
+          "label": "${resources.schemas.raw.name}"
+        }
+      ],
+      "action": "create",
+      "new_state": {
+        "value": {
+          "catalog": "workspace",
+          "channel": "CURRENT",
+          "configuration": {
+            "weather_signal.catalog": "workspace",
+            "weather_signal.p_hours": "30",
+            "weather_signal.raw": "/Volumes/workspace/t9_raw/raw",
+            "weather_signal.schema_prefix": "t9_"
+          },
+          "continuous": false,
+          "deployment": {
+            "kind": "BUNDLE",
+            "metadata_file_path": "/Workspace/Users/owner@example.com/.bundle/weather-signal/scratch-t9_/state/metadata.json"
+          },
+          "development": true,
+          "edition": "ADVANCED",
+          "environment": {
+            "dependencies": [
+              "/Workspace/Users/owner@example.com/.bundle/weather-signal/scratch-t9_/artifacts/.internal/weather_signal-0.1.0-py3-none-any.whl"
+            ]
+          },
+          "event_log": {
+            "catalog": "workspace",
+            "name": "pipeline_events",
+            "schema": "t9_ops"
+          },
+          "libraries": [
+            {
+              "file": {
+                "path": "/Workspace/Users/owner@example.com/.bundle/weather-signal/scratch-t9_/files/src/weather_signal_etl/transformations/pipeline.py"
+              }
+            }
+          ],
+          "name": "t9_weather-signal",
+          "notifications": [
+            {
+              "alerts": [
+                "on-update-failure",
+                "on-update-fatal-failure",
+                "on-flow-failure"
+              ],
+              "email_recipients": [
+                "owner@example.com"
+              ]
+            }
+          ],
+          "root_path": "/Workspace/Users/owner@example.com/.bundle/weather-signal/scratch-t9_/files/pipelines",
+          "schema": "t9_daily",
+          "serverless": true
+        }
+      }
+    },
+    "resources.pipelines.weather_signal.permissions": {
+      "depends_on": [
+        {
+          "node": "resources.pipelines.weather_signal",
+          "label": "${resources.pipelines.weather_signal.id}"
+        }
+      ],
+      "action": "create",
+      "new_state": {
+        "value": {
+          "object_id": "",
+          "__embed__": [
+            {
+              "level": "CAN_VIEW",
+              "service_principal_name": "sp-0"
+            },
+            {
+              "level": "IS_OWNER",
+              "user_name": "owner@example.com"
+            }
+          ]
+        },
+        "vars": {
+          "object_id": "/pipelines/${resources.pipelines.weather_signal.id}"
+        }
+      }
+    },
+    "resources.registered_models.stock_signal": {
+      "depends_on": [
+        {
+          "node": "resources.schemas.signals",
+          "label": "${resources.schemas.signals.name}"
+        }
+      ],
+      "action": "create",
+      "new_state": {
+        "value": {
+          "catalog_name": "workspace",
+          "comment": "Deterministic signal model for the traded stock (WMT); alias `champion` is what `score` loads.",
+          "name": "stock_signal",
+          "schema_name": "t9_signals"
+        }
+      }
+    },
+    "resources.registered_models.stock_signal.grants": {
+      "depends_on": [
+        {
+          "node": "resources.registered_models.stock_signal",
+          "label": "${resources.registered_models.stock_signal.id}"
+        }
+      ],
+      "action": "create",
+      "new_state": {
+        "value": {
+          "securable_type": "function",
+          "full_name": "",
+          "__embed__": [
+            {
+              "principal": "sp-0",
+              "privileges": [
+                "EXECUTE"
+              ]
+            }
+          ]
+        },
+        "vars": {
+          "full_name": "${resources.registered_models.stock_signal.id}"
+        }
+      }
+    },
+    "resources.schemas.app": {
+      "action": "create",
+      "new_state": {
+        "value": {
+          "catalog_name": "workspace",
+          "name": "t9_app"
+        }
+      }
+    },
+    "resources.schemas.app.grants": {
+      "depends_on": [
+        {
+          "node": "resources.apps.ui_app",
+          "label": "${resources.apps.ui_app.service_principal_client_id}"
+        },
+        {
+          "node": "resources.schemas.app",
+          "label": "${resources.schemas.app.id}"
+        }
+      ],
+      "action": "create",
+      "new_state": {
+        "value": {
+          "securable_type": "schema",
+          "full_name": "",
+          "__embed__": [
+            {
+              "principal": "sp-0",
+              "privileges": [
+                "CREATE_TABLE",
+                "SELECT",
+                "USE_SCHEMA"
+              ]
+            },
+            {
+              "principal": "sp-1",
+              "privileges": [
+                "EXECUTE",
+                "SELECT",
+                "USE_SCHEMA"
+              ]
+            },
+            {
+              "principal": "${resources.apps.ui_app.service_principal_client_id}",
+              "privileges": [
+                "USE_SCHEMA"
+              ]
+            }
+          ]
+        },
+        "vars": {
+          "[2].principal": "${resources.apps.ui_app.service_principal_client_id}",
+          "full_name": "${resources.schemas.app.id}"
+        }
+      }
+    },
+    "resources.schemas.daily": {
+      "action": "create",
+      "new_state": {
+        "value": {
+          "catalog_name": "workspace",
+          "name": "t9_daily"
+        }
+      }
+    },
+    "resources.schemas.daily.grants": {
+      "depends_on": [
+        {
+          "node": "resources.schemas.daily",
+          "label": "${resources.schemas.daily.id}"
+        }
+      ],
+      "action": "create",
+      "new_state": {
+        "value": {
+          "securable_type": "schema",
+          "full_name": "",
+          "__embed__": [
+            {
+              "principal": "sp-0",
+              "privileges": [
+                "CREATE_MATERIALIZED_VIEW",
+                "CREATE_TABLE",
+                "SELECT",
+                "USE_SCHEMA"
+              ]
+            }
+          ]
+        },
+        "vars": {
+          "full_name": "${resources.schemas.daily.id}"
+        }
+      }
+    },
+    "resources.schemas.ops": {
+      "action": "create",
+      "new_state": {
+        "value": {
+          "catalog_name": "workspace",
+          "name": "t9_ops"
+        }
+      }
+    },
+    "resources.schemas.ops.grants": {
+      "depends_on": [
+        {
+          "node": "resources.schemas.ops",
+          "label": "${resources.schemas.ops.id}"
+        }
+      ],
+      "action": "create",
+      "new_state": {
+        "value": {
+          "securable_type": "schema",
+          "full_name": "",
+          "__embed__": [
+            {
+              "principal": "sp-0",
+              "privileges": [
+                "CREATE_TABLE",
+                "MODIFY",
+                "SELECT",
+                "USE_SCHEMA"
+              ]
+            }
+          ]
+        },
+        "vars": {
+          "full_name": "${resources.schemas.ops.id}"
+        }
+      }
+    },
+    "resources.schemas.raw": {
+      "action": "create",
+      "new_state": {
+        "value": {
+          "catalog_name": "workspace",
+          "name": "t9_raw"
+        }
+      }
+    },
+    "resources.schemas.raw.grants": {
+      "depends_on": [
+        {
+          "node": "resources.schemas.raw",
+          "label": "${resources.schemas.raw.id}"
+        }
+      ],
+      "action": "create",
+      "new_state": {
+        "value": {
+          "securable_type": "schema",
+          "full_name": "",
+          "__embed__": [
+            {
+              "principal": "sp-0",
+              "privileges": [
+                "CREATE_MATERIALIZED_VIEW",
+                "CREATE_TABLE",
+                "USE_SCHEMA"
+              ]
+            }
+          ]
+        },
+        "vars": {
+          "full_name": "${resources.schemas.raw.id}"
+        }
+      }
+    },
+    "resources.schemas.signals": {
+      "action": "create",
+      "new_state": {
+        "value": {
+          "catalog_name": "workspace",
+          "name": "t9_signals"
+        }
+      }
+    },
+    "resources.schemas.signals.grants": {
+      "depends_on": [
+        {
+          "node": "resources.apps.ui_app",
+          "label": "${resources.apps.ui_app.service_principal_client_id}"
+        },
+        {
+          "node": "resources.schemas.signals",
+          "label": "${resources.schemas.signals.id}"
+        }
+      ],
+      "action": "create",
+      "new_state": {
+        "value": {
+          "securable_type": "schema",
+          "full_name": "",
+          "__embed__": [
+            {
+              "principal": "sp-0",
+              "privileges": [
+                "CREATE_MATERIALIZED_VIEW",
+                "CREATE_TABLE",
+                "SELECT",
+                "USE_SCHEMA"
+              ]
+            },
+            {
+              "principal": "sp-1",
+              "privileges": [
+                "EXECUTE",
+                "SELECT",
+                "USE_SCHEMA"
+              ]
+            },
+            {
+              "principal": "${resources.apps.ui_app.service_principal_client_id}",
+              "privileges": [
+                "USE_SCHEMA"
+              ]
+            }
+          ]
+        },
+        "vars": {
+          "[2].principal": "${resources.apps.ui_app.service_principal_client_id}",
+          "full_name": "${resources.schemas.signals.id}"
+        }
+      }
+    },
+    "resources.secret_scopes.alphavantage": {
+      "action": "create",
+      "new_state": {
+        "value": {
+          "scope": "weather-signal-t9_"
+        }
+      }
+    },
+    "resources.secret_scopes.alphavantage.permissions": {
+      "depends_on": [
+        {
+          "node": "resources.secret_scopes.alphavantage",
+          "label": "${resources.secret_scopes.alphavantage.name}"
+        }
+      ],
+      "action": "create",
+      "new_state": {
+        "value": {
+          "scope_name": "",
+          "acls": [
+            {
+              "permission": "READ",
+              "principal": "sp-0"
+            },
+            {
+              "permission": "MANAGE",
+              "principal": "owner@example.com"
+            }
+          ]
+        },
+        "vars": {
+          "scope_name": "${resources.secret_scopes.alphavantage.name}"
+        }
+      }
+    },
+    "resources.volumes.ledger": {
+      "depends_on": [
+        {
+          "node": "resources.schemas.raw",
+          "label": "${resources.schemas.raw.name}"
+        }
+      ],
+      "action": "create",
+      "new_state": {
+        "value": {
+          "catalog_name": "workspace",
+          "name": "ledger",
+          "schema_name": "t9_raw",
+          "volume_type": "MANAGED"
+        }
+      }
+    },
+    "resources.volumes.ledger.grants": {
+      "depends_on": [
+        {
+          "node": "resources.volumes.ledger",
+          "label": "${resources.volumes.ledger.id}"
+        }
+      ],
+      "action": "create",
+      "new_state": {
+        "value": {
+          "securable_type": "volume",
+          "full_name": "",
+          "__embed__": [
+            {
+              "principal": "sp-0",
+              "privileges": [
+                "READ_VOLUME",
+                "WRITE_VOLUME"
+              ]
+            }
+          ]
+        },
+        "vars": {
+          "full_name": "${resources.volumes.ledger.id}"
+        }
+      }
+    },
+    "resources.volumes.raw_files": {
+      "depends_on": [
+        {
+          "node": "resources.schemas.raw",
+          "label": "${resources.schemas.raw.name}"
+        }
+      ],
+      "action": "create",
+      "new_state": {
+        "value": {
+          "catalog_name": "workspace",
+          "name": "raw",
+          "schema_name": "t9_raw",
+          "volume_type": "MANAGED"
+        }
+      }
+    },
+    "resources.volumes.raw_files.grants": {
+      "depends_on": [
+        {
+          "node": "resources.volumes.raw_files",
+          "label": "${resources.volumes.raw_files.id}"
+        }
+      ],
+      "action": "create",
+      "new_state": {
+        "value": {
+          "securable_type": "volume",
+          "full_name": "",
+          "__embed__": [
+            {
+              "principal": "sp-0",
+              "privileges": [
+                "READ_VOLUME",
+                "WRITE_VOLUME"
+              ]
+            }
+          ]
+        },
+        "vars": {
+          "full_name": "${resources.volumes.raw_files.id}"
+        }
+      }
+    },
+    "resources.volumes.ui": {
+      "depends_on": [
+        {
+          "node": "resources.schemas.signals",
+          "label": "${resources.schemas.signals.name}"
+        }
+      ],
+      "action": "create",
+      "new_state": {
+        "value": {
+          "catalog_name": "workspace",
+          "comment": "snapshot.json, written hourly by the ui_snapshot job and read by the App.",
+          "name": "ui",
+          "schema_name": "t9_signals",
+          "volume_type": "MANAGED"
+        }
+      }
+    },
+    "resources.volumes.ui.grants": {
+      "depends_on": [
+        {
+          "node": "resources.apps.ui_app",
+          "label": "${resources.apps.ui_app.service_principal_client_id}"
+        },
+        {
+          "node": "resources.volumes.ui",
+          "label": "${resources.volumes.ui.id}"
+        }
+      ],
+      "action": "create",
+      "new_state": {
+        "value": {
+          "securable_type": "volume",
+          "full_name": "",
+          "__embed__": [
+            {
+              "principal": "sp-0",
+              "privileges": [
+                "READ_VOLUME",
+                "WRITE_VOLUME"
+              ]
+            },
+            {
+              "principal": "${resources.apps.ui_app.service_principal_client_id}",
+              "privileges": [
+                "READ_VOLUME"
+              ]
+            }
+          ]
+        },
+        "vars": {
+          "[1].principal": "${resources.apps.ui_app.service_principal_client_id}",
+          "full_name": "${resources.volumes.ui.id}"
+        }
+      }
+    }
+  }
+}

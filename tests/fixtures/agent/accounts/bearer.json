@@ -1,0 +1,4 @@
+{
+  "apiProvider": "firstParty",
+  "tokenSource": "ANTHROPIC_AUTH_TOKEN"
+}

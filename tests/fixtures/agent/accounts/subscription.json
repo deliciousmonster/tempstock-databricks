@@ -1,0 +1,6 @@
+{
+  "apiProvider": "firstParty",
+  "email": "user@example.com",
+  "organization": "example-org",
+  "subscriptionType": "Claude Ultra"
+}

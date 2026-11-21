@@ -1,0 +1,94 @@
+{
+  "version": 2,
+  "config": {
+    "sample_questions": [
+      {
+        "id": "2e515d48833a0d020e249c517be04ecf",
+        "question": [
+          "What did the agent call for each of the next seven days?"
+        ]
+      },
+      {
+        "id": "6fb70f65a0ade8cf033fc68509a8d5dc",
+        "question": [
+          "Which agent runs failed in the last 48 hours, and why?"
+        ]
+      },
+      {
+        "id": "82978fe396e0e60f5132401c2ae87d7d",
+        "question": [
+          "How often did the agent's call differ from the model signal in the last 30 days?"
+        ]
+      },
+      {
+        "id": "f0903b73ee362748ea453fa18dbb7a81",
+        "question": [
+          "Show WMT closes and the temperature anomaly by month for the last two years."
+        ]
+      }
+    ]
+  },
+  "data_sources": {
+    "tables": [
+      {
+        "identifier": "${catalog}.${app_schema}.v_ui_agent_runs"
+      },
+      {
+        "identifier": "${catalog}.${app_schema}.v_ui_calls"
+      },
+      {
+        "identifier": "${catalog}.${app_schema}.v_ui_index"
+      },
+      {
+        "identifier": "${catalog}.${app_schema}.v_ui_outlook"
+      },
+      {
+        "identifier": "${catalog}.${app_schema}.v_ui_sources"
+      },
+      {
+        "identifier": "${catalog}.${app_schema}.v_ui_status"
+      }
+    ]
+  },
+  "instructions": {
+    "text_instructions": [
+      {
+        "id": "cdf1e220d89c2dcd2e000c3d105bf93e",
+        "content": [
+          "weather-signal: hourly buy, sell or hold calls on WMT from a US temperature index. Personal demo, not investment advice. Weather data by Open-Meteo.com (CC BY 4.0).\n",
+          "* A call is shown_action, the agent's action. signal_action is the model signal, not a call; never present it as one.\n",
+          "* A row with shown_action null has no agent call; say so instead of using signal_action.\n",
+          "* Integrity (verified, held, flagged) is not in these views; never say a call is verified. v_ui_status has the guard inputs and read_at.\n",
+          "* v_ui_index has days with an index and no close (before 1991, weekends and holidays); ticker names the stock of each close; anomaly_c is null on a day of year missing any 1961-1990 year.\n",
+          "* Times are UTC. as_of is the hour a call was made; target_date is the day it is for; horizon_days is target_date minus the as_of date.\n",
+          "* v_ui_outlook is the latest outlook: today (horizon 0) plus the next six days (horizons 1 to 6). \"The next seven days\" means all of v_ui_outlook; never filter it with target_date > CURRENT_DATE, which drops today.\n",
+          "* In v_ui_sources the row with kind = 'fill_shape' is not rows checked: n is the metro-lead cells and n_bad the metros in the worst forecast file quarantined in the last 7 days. Leave it out of any sum or count of rows.\n"
+        ]
+      }
+    ],
+    "example_question_sqls": [
+      {
+        "id": "5813fcecdebd817c2ae25cf5ef52950b",
+        "question": [
+          "What is the outlook?"
+        ],
+        "sql": [
+          "SELECT target_date, horizon_days, shown_action, signal_action, downgrade_reason\n",
+          "FROM v_ui_outlook\n",
+          "ORDER BY horizon_days\n"
+        ]
+      },
+      {
+        "id": "ca6709171442d8d57c49bffe3ee0ce89",
+        "question": [
+          "What did the agent call for each of the next seven days?"
+        ],
+        "sql": [
+          "SELECT target_date, horizon_days, shown_action, signal_action\n",
+          "FROM v_ui_outlook\n",
+          "ORDER BY horizon_days"
+        ]
+      }
+    ]
+  }
+}

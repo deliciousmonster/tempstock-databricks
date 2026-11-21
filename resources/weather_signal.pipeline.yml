@@ -1,0 +1,28 @@
+# The declarative pipeline over `weather_signal.pipeline.transforms`; triggered by the score job's refresh task.
+
+resources:
+  pipelines:
+    weather_signal:
+      name: ${var.schema_prefix}weather-signal
+      catalog: ${var.catalog}
+      schema: ${resources.schemas.daily.name}
+      serverless: true
+      root_path: ../src/weather_signal_etl
+      libraries:
+        - file:
+            path: ../src/weather_signal_etl/transformations/pipeline.py
+      environment:
+        dependencies:
+          - ../dist/*.whl
+      configuration:
+        weather_signal.catalog: ${var.catalog}
+        weather_signal.schema_prefix: ${var.schema_prefix}
+        weather_signal.p_hours: ${var.p_hours}
+        weather_signal.raw: /Volumes/${var.catalog}/${resources.schemas.raw.name}/raw
+      event_log:
+        catalog: ${var.catalog}
+        schema: ${resources.schemas.ops.name}
+        name: pipeline_events
+      notifications:
+        - email_recipients: ["${var.owner}"]
+          alerts: [on-update-failure, on-update-fatal-failure, on-flow-failure]

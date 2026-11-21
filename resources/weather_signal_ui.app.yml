@@ -1,0 +1,42 @@
+# The App and its grants on every target; each target restates the grant variables with the App's.
+# Its view grants are made by `setup`: the views do not exist at a fresh land's first deploy.
+
+targets:
+  dev:
+    variables: &app_grants
+      signals_grants:
+        - {principal: "${var.runner}", privileges: [USE_SCHEMA, CREATE_TABLE, CREATE_MATERIALIZED_VIEW, SELECT]}
+        - {principal: "${var.agent}", privileges: [USE_SCHEMA, SELECT, EXECUTE]}
+        - {principal: "${resources.apps.ui_app.service_principal_client_id}", privileges: [USE_SCHEMA]}
+      app_grants:
+        - {principal: "${var.runner}", privileges: [USE_SCHEMA, CREATE_TABLE, SELECT]}
+        - {principal: "${var.agent}", privileges: [USE_SCHEMA, SELECT, EXECUTE]}
+        - {principal: "${resources.apps.ui_app.service_principal_client_id}", privileges: [USE_SCHEMA]}
+      ui_volume_grants:
+        - {principal: "${var.runner}", privileges: [READ_VOLUME, WRITE_VOLUME]}
+        - {principal: "${resources.apps.ui_app.service_principal_client_id}", privileges: [READ_VOLUME]}
+    resources: &app
+      apps:
+        ui_app:
+          name: ${var.app_prefix}weather-signal-ui
+          description: weather-signal, read-only. Personal demo, not investment advice.
+          source_code_path: ../app
+          config:
+            command: [python, -m, ws_ui]
+            env:
+              - {name: WS_UI_CATALOG, value: "${var.catalog}"}
+              - {name: WS_UI_SCHEMA, value: "${resources.schemas.app.name}"}
+              - {name: WS_UI_SNAPSHOT, value: "/Volumes/${resources.volumes.ui.catalog_name}/${resources.volumes.ui.schema_name}/${resources.volumes.ui.name}/snapshot.json"}
+              - {name: WS_UI_WAREHOUSE_ID, value_from: sql-warehouse}
+          resources:
+            - name: sql-warehouse
+              sql_warehouse: {id: "${var.warehouse_id}", permission: CAN_USE}
+            - name: ui-volume
+              # A ${resources.} reference is the App's dependency edge on the volume; a var-built name is none.
+              uc_securable: {securable_full_name: "${resources.volumes.ui.catalog_name}.${resources.volumes.ui.schema_name}.${resources.volumes.ui.name}", securable_type: VOLUME, permission: READ_VOLUME}
+  scratch:
+    variables: *app_grants
+    resources: *app
+  prod:
+    variables: *app_grants
+    resources: *app

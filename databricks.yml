@@ -1,0 +1,153 @@
+# The weather-signal bundle. Bootstrap deploys schedules paused and unpauses them last; prod only with --live.
+bundle:
+  name: weather-signal
+  engine: direct
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    description: Unity Catalog catalog; `workspace` unless `CREATE CATALOG weather_signal` succeeded.
+    default: workspace
+  schema_prefix:
+    # No default: a target that lost its prefix would deploy to the prod names.
+    description: Prefix of the schema, job and pipeline names; `dev_` in dev, `tN_` in scratch, empty in prod.
+  app_prefix:
+    description: The schema prefix with `-` for `_`; App names take no underscore.
+  runner:
+    description: Application id of `weather-signal-runner`, which bootstrap creates when missing.
+    lookup: {service_principal: weather-signal-runner}
+  agent:
+    description: Application id of `weather-signal-agent`, which bootstrap creates when missing.
+    lookup: {service_principal: weather-signal-agent}
+  warehouse_id:
+    description: The one SQL warehouse; bootstrap passes it from `warehouses list`.
+  owner:
+    description: The owner's user name, who keeps MANAGE on the secret scope and is notified.
+    default: ${workspace.current_user.userName}
+  secret_scope:
+    description: Secret scope holding `alphavantage-api-key`.
+    default: weather-signal
+  schedule_pause:
+    description: The pause status of every schedule; bootstrap passes PAUSED until its last phase.
+    default: PAUSED
+  dev_holds:
+    description: dev's prevent_destroy holds; only the proof's destroy passes false, after its archive.
+    default: true
+  wheel_tag:
+    description: Names the wheel's upload folder; bootstrap passes a digest of the wheel's sources.
+    default: manual
+  p_hours:
+    description: Forecast publication delay P in whole hours (provisional 30 until 72 envelopes are measured).
+    default: "30"
+  # Grants on a bundle-managed schema or volume replace any others, so each App target restates
+  # these with its App's grants in resources/weather_signal_ui.app.yml; the default is the runner's.
+  signals_grants:
+    description: Grants on the signals schema.
+    type: complex
+    default:
+      - {principal: "${var.runner}", privileges: [USE_SCHEMA, CREATE_TABLE, CREATE_MATERIALIZED_VIEW, SELECT]}
+  app_grants:
+    description: Grants on the app schema, which holds the v_ui_* views and fn_ui_* functions.
+    type: complex
+    default:
+      - {principal: "${var.runner}", privileges: [USE_SCHEMA, CREATE_TABLE, SELECT]}
+  ui_volume_grants:
+    description: Grants on the ui volume.
+    type: complex
+    default:
+      - {principal: "${var.runner}", privileges: [READ_VOLUME, WRITE_VOLUME]}
+
+artifacts:
+  weather_signal:
+    type: whl
+    build: uv build --wheel
+
+# Cost attribution on every job and pipeline.
+presets:
+  tags:
+    project: weather-signal
+
+workspace:
+  root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+  # A code change is a new library path, so the plan sees it and serverless installs it afresh.
+  artifact_path: ${workspace.root_path}/artifacts/${var.wheel_tag}
+
+targets:
+  dev:
+    # No `mode: development`: it requires the user name in the prefix, and dev's schemas are dev_*.
+    default: true
+    presets:
+      jobs_max_concurrent_runs: 1
+      # One attempt per update, no retry loop; prod keeps production retries.
+      pipelines_development: true
+    variables:
+      schema_prefix: "dev_"
+      # dev runs live, so a later deploy keeps its schedules running.
+      schedule_pause: UNPAUSED
+      app_prefix: "dev-"
+      secret_scope: weather-signal-dev
+    resources:
+      # The raw files and the ledgers are what a recreation cannot refetch for free.
+      schemas:
+        raw: {lifecycle: {prevent_destroy: "${var.dev_holds}"}}
+      volumes:
+        raw_files: {lifecycle: {prevent_destroy: "${var.dev_holds}"}}
+        ledger: {lifecycle: {prevent_destroy: "${var.dev_holds}"}}
+      jobs:
+        # The backtest writes nothing live, so dev runs it as the runner and exercises its MODIFY.
+        backtest: {run_as: {service_principal_name: "${var.runner}"}}
+    permissions:
+      - user_name: ${var.owner}
+        level: CAN_MANAGE
+      # The runner reads the wheel under the bundle root when a job runs as it.
+      - service_principal_name: ${var.runner}
+        level: CAN_VIEW
+
+  scratch:
+    # A throwaway copy under a tN_ prefix; `bootstrap --destroy` removes it.
+    workspace:
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/scratch-${var.schema_prefix}
+    presets:
+      jobs_max_concurrent_runs: 1
+      pipelines_development: true
+    variables:
+      secret_scope: weather-signal-${var.schema_prefix}
+    permissions:
+      - user_name: ${var.owner}
+        level: CAN_MANAGE
+      - service_principal_name: ${var.runner}
+        level: CAN_VIEW
+
+  prod:
+    mode: production
+    variables: {schema_prefix: "", app_prefix: ""}
+    workspace:
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/prod
+    permissions:
+      - user_name: ${var.owner}
+        level: CAN_MANAGE
+      - service_principal_name: ${var.runner}
+        level: CAN_VIEW
+    resources:
+      # run_as per job and pipeline, not on the target: an App refuses a target-level run_as.
+      jobs:
+        ingest: {run_as: {service_principal_name: "${var.runner}"}}
+        score: {run_as: {service_principal_name: "${var.runner}"}}
+        backtest: {run_as: {service_principal_name: "${var.runner}"}}
+        ui_snapshot: {run_as: {service_principal_name: "${var.runner}"}}
+        # Registering a version and moving @champion are the model owner's acts, so train runs as them.
+        train: {run_as: {user_name: "${var.owner}"}}
+      pipelines:
+        weather_signal: {run_as: {service_principal_name: "${var.runner}"}}
+      schemas:
+        raw: {lifecycle: {prevent_destroy: true}}
+        daily: {lifecycle: {prevent_destroy: true}}
+        signals: {lifecycle: {prevent_destroy: true}}
+        app: {lifecycle: {prevent_destroy: true}}
+        ops: {lifecycle: {prevent_destroy: true}}
+      volumes:
+        raw_files: {lifecycle: {prevent_destroy: true}}
+        ledger: {lifecycle: {prevent_destroy: true}}
+        ui: {lifecycle: {prevent_destroy: true}}

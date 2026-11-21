@@ -1,0 +1,30 @@
+# Unscheduled: the walk-forward backtest, a ThresholdModel refit each year on labels known by then.
+
+resources:
+  jobs:
+    backtest:
+      name: ${var.schema_prefix}weather-signal-backtest
+      max_concurrent_runs: 1
+      queue: {enabled: false}
+      performance_target: STANDARD
+      email_notifications:
+        on_failure: ["${var.owner}"]
+      health:
+        rules:
+          - metric: RUN_DURATION_SECONDS
+            op: GREATER_THAN
+            value: 1200
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"
+            dependencies:
+              - ../dist/*.whl
+      tasks:
+        - task_key: backtest
+          environment_key: default
+          timeout_seconds: 1800
+          python_wheel_task:
+            package_name: weather_signal
+            entry_point: weather-signal-backtest
+            parameters: [--catalog, "${var.catalog}", --schema-prefix, "${var.schema_prefix}"]

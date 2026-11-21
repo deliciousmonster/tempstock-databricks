@@ -1,0 +1,296 @@
+{
+ "now": "2026-11-17T20:00:00Z",
+ "base": {
+  "as_of": "2026-11-17T17:30:00Z",
+  "written_at": "2026-11-17T17:44:10Z",
+  "open_incident": false,
+  "post_verified_as_of": "2026-11-17T18:30:00Z",
+  "guarded_tables": 2,
+  "audit_problem": null,
+  "read_at": "2026-11-17T19:15:00Z"
+ },
+ "cases": [
+  {
+   "name": "clean",
+   "with": {},
+   "want": "verified"
+  },
+  {
+   "name": "age 75:00",
+   "with": {
+    "read_at": "2026-11-17T18:45:00Z"
+   },
+   "want": "verified"
+  },
+  {
+   "name": "age 75:01",
+   "with": {
+    "read_at": "2026-11-17T18:44:59Z"
+   },
+   "want": "stale"
+  },
+  {
+   "name": "read_at 3 h future",
+   "with": {
+    "read_at": "2026-11-17T23:00:00Z"
+   },
+   "want": "stale"
+  },
+  {
+   "name": "read_at 6 min future",
+   "with": {
+    "read_at": "2026-11-17T20:06:00Z"
+   },
+   "want": "stale"
+  },
+  {
+   "name": "read_at 4 min future (skew)",
+   "with": {
+    "read_at": "2026-11-17T20:04:00Z"
+   },
+   "want": "verified"
+  },
+  {
+   "name": "read_at null",
+   "with": {
+    "read_at": null
+   },
+   "want": "unreadable"
+  },
+  {
+   "name": "read_at garbage",
+   "with": {
+    "read_at": "garbage"
+   },
+   "want": "unreadable"
+  },
+  {
+   "name": "read_at naive",
+   "with": {
+    "read_at": "2026-11-17 19:15:00"
+   },
+   "want": "unreadable"
+  },
+  {
+   "name": "post garbage",
+   "with": {
+    "post_verified_as_of": "garbage"
+   },
+   "want": "unreadable"
+  },
+  {
+   "name": "as_of garbage",
+   "with": {
+    "as_of": "garbage"
+   },
+   "want": "unreadable"
+  },
+  {
+   "name": "written_at garbage",
+   "with": {
+    "written_at": "x"
+   },
+   "want": "unreadable"
+  },
+  {
+   "name": "now garbage",
+   "now": "garbage",
+   "with": {},
+   "want": "unreadable"
+  },
+  {
+   "name": "post == as_of",
+   "with": {
+    "post_verified_as_of": "2026-11-17T17:30:00Z"
+   },
+   "want": "awaiting"
+  },
+  {
+   "name": "post before written_at",
+   "with": {
+    "post_verified_as_of": "2026-11-17T17:30:00Z",
+    "written_at": "2026-11-17T17:31:00Z"
+   },
+   "want": "awaiting"
+  },
+  {
+   "name": "post null",
+   "with": {
+    "post_verified_as_of": null
+   },
+   "want": "awaiting"
+  },
+  {
+   "name": "signal only, post > as_of",
+   "with": {
+    "written_at": null
+   },
+   "want": "verified"
+  },
+  {
+   "name": "guarded_tables 0",
+   "with": {
+    "guarded_tables": 0,
+    "open_incident": true
+   },
+   "want": "not_set_up"
+  },
+  {
+   "name": "open_incident missing",
+   "with": {
+    "open_incident": null
+   },
+   "want": "not_set_up"
+  },
+  {
+   "name": "held",
+   "with": {
+    "open_incident": true
+   },
+   "want": "held"
+  },
+  {
+   "name": "flagged",
+   "with": {
+    "audit_problem": "duplicate,flip"
+   },
+   "want": "flagged"
+  },
+  {
+   "name": "export: at snapshot",
+   "now_is_read_at": true,
+   "with": {
+    "read_at": "2026-11-17T08:15:00Z",
+    "as_of": "2026-11-17T06:30:00Z",
+    "written_at": "2026-11-17T06:44:00Z",
+    "post_verified_as_of": "2026-11-17T07:30:00Z"
+   },
+   "want": "verified"
+  },
+  {
+   "name": "export: opened next day",
+   "now": "2026-11-18T10:00:00Z",
+   "with": {
+    "read_at": "2026-11-17T08:15:00Z",
+    "as_of": "2026-11-17T06:30:00Z",
+    "written_at": "2026-11-17T06:44:00Z",
+    "post_verified_as_of": "2026-11-17T07:30:00Z"
+   },
+   "want": "stale"
+  },
+  {
+   "name": "read_at month 13",
+   "with": {
+    "read_at": "2026-13-45T10:00:00Z"
+   },
+   "want": "unreadable"
+  },
+  {
+   "name": "read_at Feb 30",
+   "with": {
+    "read_at": "2026-02-30T19:15:00Z"
+   },
+   "want": "unreadable"
+  },
+  {
+   "name": "post Feb 30",
+   "with": {
+    "post_verified_as_of": "2026-02-30T19:15:00Z"
+   },
+   "want": "unreadable"
+  },
+  {
+   "name": "read_at hour 24",
+   "with": {
+    "read_at": "2026-11-17T24:00:00Z"
+   },
+   "want": "unreadable"
+  },
+  {
+   "name": "read_at second 60",
+   "with": {
+    "read_at": "2026-11-17T19:15:60Z"
+   },
+   "want": "unreadable"
+  },
+  {
+   "name": "read_at offset +25:00",
+   "with": {
+    "read_at": "2026-11-17T19:15:00+25:00"
+   },
+   "want": "unreadable"
+  },
+  {
+   "name": "read_at +02:00 offset ok",
+   "with": {
+    "read_at": "2026-11-17T21:15:00+02:00"
+   },
+   "want": "verified"
+  },
+  {
+   "name": "audit_problem empty list",
+   "with": {
+    "audit_problem": []
+   },
+   "want": "verified"
+  },
+  {
+   "name": "audit_problem empty string",
+   "with": {
+    "audit_problem": ""
+   },
+   "want": "verified"
+  },
+  {
+   "name": "audit_problem list",
+   "with": {
+    "audit_problem": [
+     "flip"
+    ]
+   },
+   "want": "flagged"
+  },
+  {
+   "name": "audit_problem number",
+   "with": {
+    "audit_problem": 1
+   },
+   "want": "unreadable"
+  },
+  {
+   "name": "read_at offset +19:00",
+   "want": "unreadable",
+   "with": {
+    "read_at": "2026-11-17T08:15:00+19:00"
+   }
+  },
+  {
+   "name": "read_at offset +02:60",
+   "want": "unreadable",
+   "with": {
+    "read_at": "2026-11-17T08:15:00+02:60"
+   }
+  },
+  {
+   "name": "read_at offset +23:59",
+   "want": "unreadable",
+   "with": {
+    "read_at": "2026-11-17T08:15:00+23:59"
+   }
+  },
+  {
+   "name": "read_at year 0000",
+   "want": "unreadable",
+   "with": {
+    "read_at": "0000-01-01T00:00:00Z"
+   }
+  },
+  {
+   "name": "read_at offset +18:00 ok",
+   "want": "verified",
+   "with": {
+    "read_at": "2026-11-18T13:15:00+18:00"
+   }
+  }
+ ]
+}

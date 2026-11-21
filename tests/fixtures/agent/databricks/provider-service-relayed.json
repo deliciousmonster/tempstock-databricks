@@ -1,0 +1,20 @@
+{
+  "comment": "<comment>",
+  "config": {
+    "allow_all_targets": true,
+    "anthropic": {
+      "relayed": {}
+    },
+    "provider_type": "<config/provider_type>"
+  },
+  "create_time": "<create_time>",
+  "created_by": "<created_by>",
+  "effective_owner": "<effective_owner>",
+  "etag": "<etag>",
+  "id": "<id>",
+  "metastore_id": "<metastore_id>",
+  "name": "<name>",
+  "securable_type": "<securable_type>",
+  "update_time": "<update_time>",
+  "updated_by": "<updated_by>"
+}
